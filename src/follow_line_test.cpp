@@ -10,6 +10,8 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <ctime>
+#include <string>
 
 // follow_line_test.cpp 是 follow_test 节点的具体工作逻辑文件。
 // 这里保留原 flow_end 视觉巡线算法依赖的全局变量，同时去掉原地图中的环岛和激光雷达流程。
@@ -33,6 +35,12 @@ float mapx[RESULT_ROW][RESULT_COL];
 float mapy[RESULT_ROW][RESULT_COL];
 ros::Publisher pub;
 ros::Publisher end_pub;
+
+// Video recording variables
+cv::VideoWriter debug_video_writer;
+bool video_recording = false;
+std::string video_save_path = "/tmp/follow_test_debug.avi";
+int video_fps = 10;
 
 float slope = 0.0f;
 float angle_deg = 0.0f;
@@ -573,18 +581,44 @@ void publishDebugImage(const sensor_msgs::ImageConstPtr &source_msg) {
     }
 
     cv::Mat debug_gray = convert2DArrayToMat(img_line_data);
+    
+    // 显示窗口（如果启用）
     if (show_window) {
         cv::imshow("follow_test", debug_gray);
         cv::waitKey(1);
     }
-    if (publish_debug_image && debug_pub) {
-        std_msgs::Header header;
-        if (source_msg) {
-            header = source_msg->header;
+    
+    // 视频保存（替代原来的ROS话题发布）
+    if (publish_debug_image) {
+        // 第一次调用时初始化VideoWriter
+        if (!video_recording) {
+            // 生成带时间戳的文件名
+            std::time_t now = std::time(nullptr);
+            char timestamp[64];
+            std::strftime(timestamp, sizeof(timestamp), "%Y%m%d_%H%M%S", std::localtime(&now));
+            
+            video_save_path = "/tmp/follow_test_debug_" + std::string(timestamp) + ".avi";
+            
+            debug_video_writer.open(
+                video_save_path,
+                cv::VideoWriter::fourcc('M', 'J', 'P', 'G'),
+                video_fps,
+                cv::Size(RESULT_COL, RESULT_ROW),
+                false  // 灰度图
+            );
+            
+            if (debug_video_writer.isOpened()) {
+                video_recording = true;
+                ROS_INFO("[DEBUG_VIDEO] Started recording to: %s", video_save_path.c_str());
+            } else {
+                ROS_ERROR("[DEBUG_VIDEO] Failed to open video writer!");
+            }
         }
-        sensor_msgs::ImagePtr msg = cv_bridge::CvImage(
-            header, sensor_msgs::image_encodings::MONO8, debug_gray).toImageMsg();
-        debug_pub.publish(msg);
+        
+        // 写入当前帧
+        if (video_recording && debug_video_writer.isOpened()) {
+            debug_video_writer.write(debug_gray);
+        }
     }
 }
 
@@ -654,7 +688,8 @@ int followLineTestOnce() {
 
     geometry_msgs::Twist msg;
     msg.linear.x = v;
-    msg.angular.z = error;
+    msg.angular.z = error;//这里的error具体作用，如果为0，则小车会原地转圈，如果为正，则小车会向左转，如果为负，则小车会向右转
+
     pub.publish(msg);
     publishDebugImage();
 // 主循环调试信息：输出当前选用的路径、路径点数量、是否退化、误差和速度，以及角点检测状态和丢线计数。
@@ -691,6 +726,20 @@ void configure(bool publish_debug, bool show_debug_window, bool enable_parking,
     min_pid_speed = std::max(0.0, min_turn_pid_speed);
 }
 
+void configureVideo(bool enable_record, int fps, const std::string &save_path) {
+    enable_video_record = enable_record;
+    video_fps = std::max(1, std::min(30, fps));  // 限制在1-30 FPS范围内
+    if (!save_path.empty()) {
+        video_save_path = save_path;
+    }
+    // 如果禁用了视频录制，确保关闭已打开的writer
+    if (!enable_record && debug_video_writer.isOpened()) {
+        debug_video_writer.release();
+        video_recording = false;
+        ROS_INFO("[DEBUG_VIDEO] Video recording disabled.");
+    }
+}
+
 void initializeImagePipeline() {
     // 建立逆透视映射表 point_map/PerImg_ip，process_image() 依赖这些查找表。
     ImagePerspective_Init();
@@ -704,6 +753,13 @@ bool shouldExit() {
 void shutdown() {
     // 节点退出时主动停车，避免调试时 Ctrl-C 后底盘保留上一条速度。
     publishStop();
+    
+    // 关闭视频录制
+    if (video_recording && debug_video_writer.isOpened()) {
+        debug_video_writer.release();
+        video_recording = false;
+        ROS_INFO("[DEBUG_VIDEO] Video saved to: %s", video_save_path.c_str());
+    }
 }
 
 }  // namespace follow_test

@@ -25,6 +25,11 @@ int main(int argc, char **argv) {
     int initial_turn_rpts_threshold = 40;
     double initial_turn_pause_sec = 0.5;
     double min_pid_speed = 0.08;
+    
+    // 视频保存相关参数
+    bool enable_video_record = true;
+    int video_fps = 10;
+    std::string video_save_path = "";
 
     private_nh.param<std::string>("image_topic", image_topic, "/ucar_image/image_raw");
     private_nh.param<std::string>("imu_topic", imu_topic, "/imu");
@@ -45,12 +50,21 @@ int main(int argc, char **argv) {
     private_nh.param<int>("initial_turn_rpts_threshold", initial_turn_rpts_threshold, 40);
     private_nh.param<double>("initial_turn_pause_sec", initial_turn_pause_sec, 0.5);
     private_nh.param<double>("min_pid_speed", min_pid_speed, 0.08);
+    
+    // 读取视频保存参数
+    private_nh.param<bool>("enable_video_record", enable_video_record, true);
+    private_nh.param<int>("video_fps", video_fps, 10);
+    private_nh.param<std::string>("video_save_path", video_save_path, "");
 
     flow_end::follow_test::configure(publish_debug_image, show_window, parking_enabled,
                                      base_speed, aim_distance, aim_y_bias_m,
                                      initial_turn_enabled, initial_turn_angle_deg,
                                      initial_turn_angular_speed, initial_turn_rpts_threshold,
                                      initial_turn_pause_sec, min_pid_speed);
+    
+    // 配置视频保存
+    flow_end::follow_test::configureVideo(enable_video_record, video_fps, video_save_path);
+
     if (!flow_end::follow_test::setPathSelect(path_param)) {
         ROS_WARN("Invalid path_select param '%s', fallback to right.", path_param.c_str());
         flow_end::follow_test::setPathSelect("right");

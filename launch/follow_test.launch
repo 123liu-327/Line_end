@@ -49,6 +49,16 @@
   <!-- 是否弹出 OpenCV 本地窗口；远程 SSH/无桌面环境建议保持 false。 -->
   <arg name="show_window" default="false" />
 
+  <!-- 视频保存相关参数 -->
+  <!-- 是否启用视频保存（启用后将替代ROS话题发布，直接保存为AVI文件） -->
+  <arg name="enable_video_record" default="true" />
+  
+  <!-- 视频帧率，建议10-15 FPS，过高会增加CPU和磁盘压力 -->
+  <arg name="video_fps" default="10" />
+  
+  <!-- 视频保存路径（留空则使用默认路径 /tmp/follow_test_debug_时间戳.avi） -->
+  <arg name="video_save_path" default="" />
+
   <!-- 正常巡线基础前进速度，转弯误差越大程序会自动降速。 -->
   <arg name="base_speed" default="0.30" />
   <arg name="aim_distance" default="0.10" />
@@ -100,6 +110,9 @@
     <param name="parking_enabled" value="$(arg parking_enabled)" />
     <param name="publish_debug_image" value="$(arg publish_debug_image)" />
     <param name="show_window" value="$(arg show_window)" />
+    <param name="enable_video_record" value="$(arg enable_video_record)" />
+    <param name="video_fps" value="$(arg video_fps)" />
+    <param name="video_save_path" value="$(arg video_save_path)" />
     <param name="base_speed" value="$(arg base_speed)" />
     <param name="aim_distance" value="$(arg aim_distance)" />
     <param name="aim_y_bias_m" value="$(arg aim_y_bias_m)" />

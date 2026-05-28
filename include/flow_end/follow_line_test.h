@@ -39,6 +39,11 @@ extern bool initial_turn_has_last_time;
 extern double min_pid_speed;
 extern ros::Time initial_turn_pause_start;
 
+// 视频保存相关配置
+extern bool enable_video_record;
+extern int video_fps;
+extern std::string video_save_path;
+
 bool setPathSelect(const std::string &raw_value);
 std::string currentPathName();
 std::string pathToString(PathSelect path);
@@ -48,6 +53,8 @@ void configure(bool publish_debug, bool show_debug_window, bool enable_parking,
                bool enable_initial_turn, double initial_turn_angle_deg,
                double initial_turn_angular_speed, int initial_turn_rpts_threshold,
                double initial_turn_pause_sec, double min_pid_speed);
+
+void configureVideo(bool enable_record, int fps, const std::string &save_path);
 
 void initializeImagePipeline();
 void startInitialTurnIfNeeded();
