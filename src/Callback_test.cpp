@@ -182,11 +182,12 @@ void beginCallback(const std_msgs::String::ConstPtr &msg) {
         follow_test::initial_turn_has_last_time = false;
         follow_test::publishStop();
         follow_test::publishStatus("IDLE");
+        ROS_WARN("[CMD] 停车指令 | command=%s | 状态=IDLE", msg->data.c_str());
         return;
     }
 
     if (!follow_test::setPathSelect(msg->data)) {
-        ROS_WARN("Unknown follow_test command/path: %s", msg->data.c_str());
+        ROS_WARN("[CMD] 未知指令 | command=%s", msg->data.c_str());
         return;
     }
 
@@ -195,6 +196,20 @@ void beginCallback(const std_msgs::String::ConstPtr &msg) {
     zeroCount = 0;
     zero_flag = false;
     follow_test::startInitialTurnIfNeeded();
+    
+    // 启动调试信息
+    ROS_WARN("[CMD] 启动巡线 | path=%s | 偏置参数 Dis_Bias_Left=%.1f | Dis_Bias_Right=%.1f | "
+             "Time_local=%.2f | 预转使能=%d | 停车使能=%d | 基础速度=%.2f m/s | "
+             "预转角度=%.1f° | 线点阈值=%d | PID最小速度=%.2f",
+             pathToString(follow_test::path_select).c_str(),
+             Dis_Bias_Left, Dis_Bias_Right,
+             Time_local,
+             follow_test::initial_turn_enabled,
+             follow_test::parking_enabled,
+             follow_test::base_speed,
+             follow_test::initial_turn_angle_deg,
+             follow_test::initial_turn_rpts_threshold,
+             follow_test::min_pid_speed);
 }
 
 void subscribeTopics(ros::NodeHandle &nh, const std::string &image_topic,
