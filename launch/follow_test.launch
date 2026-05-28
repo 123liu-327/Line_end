@@ -54,22 +54,22 @@
   <arg name="aim_distance" default="0.10" />
   <arg name="aim_y_bias_m" default="0.20" />
  <!-- 最低转角速度，用于初始的巡线。 -->
-  <arg name="min_pid_speed" default="0.08" />
+  <arg name="min_pid_speed" default="0.1" />
 
   <!-- 是否启用起步预转角。Left/Right 会先原地转向目标岔路，Middle 不预转。 -->
   <arg name="initial_turn_enabled" default="true" />
 
   <!-- 起步预转最大角度，单位：度。达到该角度后停止预转。 -->
-  <arg name="initial_turn_angle_deg" default="30.0" />
+  <arg name="initial_turn_angle_deg" default="65" />
 
   <!-- 起步预转角速度，单位：rad/s。Left 为正，Right 为负。 -->
   <arg name="initial_turn_angular_speed" default="0.35" />
 
   <!-- 目标线点数阈值。预转过程中如果目标线点数达到该值，会提前结束预转。 -->
-  <arg name="initial_turn_rpts_threshold" default="250" />
+  <arg name="initial_turn_rpts_threshold" default="500" />
 
   <!-- 预转结束后的停顿时间，单位：秒。停顿期间持续发布零速度，再进入正常巡线。 -->
-  <arg name="initial_turn_pause_sec" default="0.5" />
+  <arg name="initial_turn_pause_sec" default="10" />
 
   <node pkg="flow_end" type="follow_test" name="follow_test" output="screen">
     <param name="image_topic" value="$(arg image_topic)" />
