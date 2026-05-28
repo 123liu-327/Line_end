@@ -36,12 +36,6 @@ float mapy[RESULT_ROW][RESULT_COL];
 ros::Publisher pub;
 ros::Publisher end_pub;
 
-// Video recording variables
-cv::VideoWriter debug_video_writer;
-bool video_recording = false;
-std::string video_save_path = "/tmp/follow_test_debug.avi";
-int video_fps = 10;
-
 float slope = 0.0f;
 float angle_deg = 0.0f;
 double current_yaw_lidar = 0.0;
@@ -140,6 +134,13 @@ bool is_degraded_mode = false;  // 退化模式标注：当无法使用首选路
 
 namespace flow_end {
 namespace follow_test {
+
+cv::VideoWriter debug_video_writer;
+bool video_recording = false;
+bool enable_video_record = true;
+std::string video_save_path = "/tmp/follow_test_debug.avi";
+bool auto_video_save_path = true;
+int video_fps = 10;
 
 PathSelect path_select = PathSelect::RIGHT;
 MotionState motion_state = MotionState::IDLE;
@@ -507,7 +508,7 @@ bool handleInitialTurn() {
         initial_turn_has_last_time = false;
         initial_turn_pause_start = ros::Time::now();
         publishStatus("ALIGN_PAUSE_" + pathToString(path_select));
-        
+
         // 预转角完成调试信息
         ROS_WARN("[INIT_TURN] 预转角完成 | path=%s | 积分角度=%.2f° | 目标角度=%.2f° | wz=%.3f rad/s | "
                  "选中线点=%d | 阈值=%d | 角度达标=%d | 线点达标=%d",
@@ -581,24 +582,26 @@ void publishDebugImage(const sensor_msgs::ImageConstPtr &source_msg) {
     }
 
     cv::Mat debug_gray = convert2DArrayToMat(img_line_data);
-    
+
     // 显示窗口（如果启用）
     if (show_window) {
         cv::imshow("follow_test", debug_gray);
         cv::waitKey(1);
     }
-    
+
     // 视频保存（替代原来的ROS话题发布）
-    if (publish_debug_image) {
+    if (publish_debug_image && enable_video_record) {
         // 第一次调用时初始化VideoWriter
         if (!video_recording) {
             // 生成带时间戳的文件名
             std::time_t now = std::time(nullptr);
             char timestamp[64];
             std::strftime(timestamp, sizeof(timestamp), "%Y%m%d_%H%M%S", std::localtime(&now));
-            
-            video_save_path = "/tmp/follow_test_debug_" + std::string(timestamp) + ".avi";
-            
+
+            if (auto_video_save_path) {
+                video_save_path = "/tmp/follow_test_debug_" + std::string(timestamp) + ".avi";
+            }
+
             debug_video_writer.open(
                 video_save_path,
                 cv::VideoWriter::fourcc('M', 'J', 'P', 'G'),
@@ -606,7 +609,7 @@ void publishDebugImage(const sensor_msgs::ImageConstPtr &source_msg) {
                 cv::Size(RESULT_COL, RESULT_ROW),
                 false  // 灰度图
             );
-            
+
             if (debug_video_writer.isOpened()) {
                 video_recording = true;
                 ROS_INFO("[DEBUG_VIDEO] Started recording to: %s", video_save_path.c_str());
@@ -614,7 +617,7 @@ void publishDebugImage(const sensor_msgs::ImageConstPtr &source_msg) {
                 ROS_ERROR("[DEBUG_VIDEO] Failed to open video writer!");
             }
         }
-        
+
         // 写入当前帧
         if (video_recording && debug_video_writer.isOpened()) {
             debug_video_writer.write(debug_gray);
@@ -729,6 +732,7 @@ void configure(bool publish_debug, bool show_debug_window, bool enable_parking,
 void configureVideo(bool enable_record, int fps, const std::string &save_path) {
     enable_video_record = enable_record;
     video_fps = std::max(1, std::min(30, fps));  // 限制在1-30 FPS范围内
+    auto_video_save_path = save_path.empty();
     if (!save_path.empty()) {
         video_save_path = save_path;
     }
@@ -753,7 +757,7 @@ bool shouldExit() {
 void shutdown() {
     // 节点退出时主动停车，避免调试时 Ctrl-C 后底盘保留上一条速度。
     publishStop();
-    
+
     // 关闭视频录制
     if (video_recording && debug_video_writer.isOpened()) {
         debug_video_writer.release();
