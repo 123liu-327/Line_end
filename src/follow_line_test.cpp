@@ -337,11 +337,10 @@ bool handleParkingCorner() {
 
     if (!is_stop_corner) {
         // 周期性打印角点检测状态（即使未检测到停车点）
-        ROS_WARN_THROTTLE(2.0, "[PARKING] 角点检测 | L0=%d(Lpt0_id=%d) | L1=%d(Lpt1_id=%d) | "
-                          "Y0=%d(Ypt0_id=%d) | Y1=%d(Ypt1_id=%d) | 左线点=%d | 右线点=%d | 停车使能=%d",
-                          Lpt0_found, Lpt0_rpts0s_id, Lpt1_found, Lpt1_rpts1s_id,
-                          Ypt0_found, Ypt0_rpts0s_id, Ypt1_found, Ypt1_rpts1s_id,
-                          rptsc0_num, rptsc1_num, parking_enabled);
+        ROS_WARN_THROTTLE(2.0, "[PARKING] CornerDetect | L0=%d(id=%d) | L1=%d(id=%d) | Y0=%d(id=%d) | Y1=%d(id=%d) | left_pts=%d | right_pts=%d | parking_enable=%d",
+                  Lpt0_found, Lpt0_rpts0s_id, Lpt1_found, Lpt1_rpts1s_id,
+                  Ypt0_found, Ypt0_rpts0s_id, Ypt1_found, Ypt1_rpts1s_id,
+                  rptsc0_num, rptsc1_num, parking_enabled);
         return false;
     }
 
@@ -538,14 +537,16 @@ bool handleInitialTurn() {
     publishDebugImage();
 
     // 预转角执行中调试信息
-    ROS_WARN_THROTTLE(0.5, "[INIT_TURN] 预转中 | path=%s | 积分角度=%.2f°/%.2f° | wz=%.3f rad/s | "
-                      "选中线点=%d/%d | dt=%.3fs | PID输出=%.3f | 转角方向=%s",
-                      pathToString(path_select).c_str(),
-                      initial_turn_integrated_angle_deg, initial_turn_angle_deg,
-                      curent_wz,
-                      selected_count, initial_turn_rpts_threshold,
-                      dt, pid_speed,
-                      motion_state == MotionState::ALIGNING_LEFT ? "LEFT" : "RIGHT");
+   // Initial turn execution debug info
+ROS_WARN_THROTTLE(0.5,
+                  "[INIT_TURN] Turning | path=%s | integrated_angle=%.2f°/%.2f° | wz=%.3f rad/s | "
+                  "selected_points=%d/%d | dt=%.3fs | PID_output=%.3f | turn_direction=%s",
+                  pathToString(path_select).c_str(),
+                  initial_turn_integrated_angle_deg, initial_turn_angle_deg,
+                  curent_wz,
+                  selected_count, initial_turn_rpts_threshold,
+                  dt, pid_speed,
+                  motion_state == MotionState::ALIGNING_LEFT ? "LEFT" : "RIGHT");
 
     return true;
 }
@@ -656,14 +657,12 @@ int followLineTestOnce() {
     msg.angular.z = error;
     pub.publish(msg);
     publishDebugImage();
-
-    // 巡线状态调试信息（包含退化状态）
-    ROS_WARN_THROTTLE(1.0, "[FOLLOW] 巡线中 | path=%s | rpts=%d | 退化=%d | error=%.3f rad | v=%.3f m/s | "
-                      "L0=%d | L1=%d | Y0=%d | Y1=%d | 丢线计数=%d | zero_flag=%d",
-                      pathToString(path_select).c_str(), rpts_num, is_degraded_mode,
-                      error, v,
-                      Lpt0_found, Lpt1_found, Ypt0_found, Ypt1_found,
-                      zeroCount, zero_flag);
+// 主循环调试信息：输出当前选用的路径、路径点数量、是否退化、误差和速度，以及角点检测状态和丢线计数。
+ROS_WARN_THROTTLE(1.0, "[FOLLOW] Running | path=%s | rpts=%d | degraded=%d | error=%.3f rad | v=%.3f m/s | L0=%d | L1=%d | Y0=%d | Y1=%d | lost_line_count=%d | zero_flag=%d",
+                  pathToString(path_select).c_str(), rpts_num, is_degraded_mode,
+                  error, v,
+                  Lpt0_found, Lpt1_found, Ypt0_found, Ypt1_found,
+                  zeroCount, zero_flag);
 
     return 0;
 }
