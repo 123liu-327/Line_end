@@ -129,6 +129,7 @@ float angle_deg_step1 = 0.0f;
 ros::Time Round_timer(0);
 float Laser_linear_dis = 0.0f;
 bool Laser_dis_check = false;
+bool is_degraded_mode = false;  // 退化模式标注：当无法使用首选路径时的退化状态
 
 namespace flow_end {
 namespace follow_test {
@@ -478,6 +479,7 @@ void selectControlPath() {
     middle_path_num = 0;
     rpts = nullptr;
     rpts_num = 0;
+    is_degraded_mode = false;  // 每次选择前重置退化状态
 
     if (path_select == PathSelect::LEFT) {
         if (rptsc0e_num > 0) {
@@ -486,6 +488,8 @@ void selectControlPath() {
         } else if (rptsc1e_num > 0) {
             rpts = rptsc1e;
             rpts_num = rptsc1e_num;
+            is_degraded_mode = true;  // LEFT模式但没有左线，退化使用右线
+            ROS_WARN_THROTTLE(1.0, "[DEGRADED] LEFT mode degraded to RIGHT line");
         }
         return;
     }
@@ -497,6 +501,8 @@ void selectControlPath() {
         } else if (rptsc0e_num > 0) {
             rpts = rptsc0e;
             rpts_num = rptsc0e_num;
+            is_degraded_mode = true;  // RIGHT模式但没有右线，退化使用左线
+            ROS_WARN_THROTTLE(1.0, "[DEGRADED] RIGHT mode degraded to LEFT line");
         }
         return;
     }
@@ -513,9 +519,13 @@ void selectControlPath() {
     } else if (rptsc0e_num > 0) {
         rpts = rptsc0e;
         rpts_num = rptsc0e_num;
+        is_degraded_mode = true;  // MIDDLE模式只有左线，退化为单侧
+        ROS_WARN_THROTTLE(1.0, "[DEGRADED] MIDDLE mode degraded to LEFT line only");
     } else if (rptsc1e_num > 0) {
         rpts = rptsc1e;
         rpts_num = rptsc1e_num;
+        is_degraded_mode = true;  // MIDDLE模式只有右线，退化为单侧
+        ROS_WARN_THROTTLE(1.0, "[DEGRADED] MIDDLE mode degraded to RIGHT line only");
     }
 }
 
@@ -712,9 +722,9 @@ int followLineTestOnce() {
     pub.publish(msg);
     publishDebugImage();
 
-    ROS_WARN_THROTTLE(1.0, "follow_test path=%s rpts=%d error=%.3f v=%.3f L0=%d L1=%d Y0=%d Y1=%d",
+    ROS_WARN_THROTTLE(1.0, "follow_test path=%s rpts=%d error=%.3f v=%.3f L0=%d L1=%d Y0=%d Y1=%d degenerate=%d",
                       pathToString(path_select).c_str(), rpts_num, error, v,
-                      Lpt0_found, Lpt1_found, Ypt0_found, Ypt1_found);
+                      Lpt0_found, Lpt1_found, Ypt0_found, Ypt1_found, is_degraded_mode);
     return 0;
 }
 
