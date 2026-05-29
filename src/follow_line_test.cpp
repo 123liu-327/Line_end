@@ -1,4 +1,4 @@
-﻿#include <flow_end/follow.h>
+#include <flow_end/follow.h>
 #include <flow_end/follow_line_test.h>
 #include <flow_end/ImagePerspectiveInit.h>
 #include <flow_end/MatTransform.h>
@@ -361,19 +361,24 @@ bool handleParkingCorner() {
     geometry_msgs::Twist local_msg;
     ros::Time last_time = ros::Time::now();
 
-    ROS_WARN("[PARKING] ✓ 停车角点检测成功 | corner_dot=(%.1f,%.1f) | 图像中心=(%.1f,%.1f) | "
-             "纵向距离=%.3fm | 横向偏差=%.3fm | 线类型=%s | 角点ID=%d",
+    ROS_WARN("[PARKING] Corner detected | corner_dot=(%.1f,%.1f) | image_center=(%.1f,%.1f) | "
+             "long_dist=%.3fm | lat_bias=%.3fm | line_type=%s | corner_id=%d",
              corner_dot[0], corner_dot[1], cx, cy,
              target_dis, target_dis_x,
-             Lpt1_found ? "右侧L点" : "左侧L点",
+             Lpt1_found ? "Right_L" : "Left_L",
              Lpt1_found ? Lpt1_rpts1s_id : Lpt0_rpts0s_id);
     publishStatus("PARKING");
+
+    int parking_loop_count = 0;  // 停车循环计数器
+    ros::Time parking_start_time = ros::Time::now();  // 停车开始时间
+    float last_print_dis = target_dis;  // 上次打印时的距离
 
     while (ros::ok()) {
         ros::spinOnce();
         const ros::Time now = ros::Time::now();
         const float dt = std::max(0.001, (now - last_time).toSec());
         last_time = now;
+        parking_loop_count++;
 
         local_msg.linear.x = 0.15;
         local_msg.linear.y = 0.0;
@@ -386,9 +391,37 @@ bool handleParkingCorner() {
         target_dis -= local_msg.linear.x * dt;
         target_dis_x -= local_msg.linear.y * dt;
 
+        // 靠近停车点时的调试信息（距离 < 0.5m 时开始打印）
+        if (std::abs(target_dis) < 0.5f) {
+            float progress_percent = (1.0f - std::abs(target_dis) / 0.215f) * 100.0f;
+            float elapsed_sec = (now - parking_start_time).toSec();
+            
+            // Print when distance changes to avoid spamming
+            if (std::abs(target_dis - last_print_dis) > 0.02f) {
+                last_print_dis = target_dis;
+                ROS_WARN("[PARKING_PROGRESS] Approaching... | progress=%.0f%% | long_dist=%.3fm/%.3fm | "
+                         "lat_bias=%.3fm | vel=(%.2f,%.2f) | loops=%d | elapsed=%.2fs",
+                         std::min(progress_percent, 100.0f),
+                         std::abs(target_dis), 0.215f,
+                         target_dis_x,
+                         local_msg.linear.x, local_msg.linear.y,
+                         parking_loop_count, elapsed_sec);
+            }
+        }
+
         if (target_dis < -0.215f) {
             // 到达停车距离后，先发零速度，再向 end_topic 发布 STOP，
             // 这样外部上层逻辑可以知道本段巡线已经结束。
+            
+            float total_time = (now - parking_start_time).toSec();
+            ROS_WARN("[PARKING] Parking finished! | final_long_dist=%.3fm | final_lat_bias=%.3fm | "
+                     "total_loops=%d | total_time=%.2fs | line_type=%s",
+                     std::abs(target_dis),
+                     target_dis_x,
+                     parking_loop_count,
+                     total_time,
+                     Lpt1_found ? "Right_L" : "Left_L");
+            
             publishStop();
             std_msgs::String end_msg;
             end_msg.data = "STOP";
