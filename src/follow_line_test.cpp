@@ -320,8 +320,11 @@ bool handleParkingCorner() {
 
     float corner_dot[2] = {0.0f, 0.0f};
     bool is_stop_corner = false;
+    const char *parking_line_type = "None";
+    int parking_corner_id = -1;
 
-    if (Lpt1_found && Lpt1_rpts1s_id >= 3 && rptsc1_num > 0) {
+    if (path_select == PathSelect::RIGHT &&
+        Lpt1_found && Lpt1_rpts1s_id >= 3 && Lpt1_rpts1s_id < rptsc1_num) {
         // 右侧线 L 角点：角点前后点在图像中形成“向左折”的趋势，
         // 且角点位于图像下方，说明停车点已经接近车体。
         int im1 = clip(Lpt1_rpts1s_id - (int)round(angle_dist / sample_dist), 0, rptsc1_num - 1);
@@ -331,8 +334,11 @@ bool handleParkingCorner() {
                          (rptsc1[Lpt1_rpts1s_id][1] > RESULT_ROW - 40);
         if (is_stop_corner) {
             corner_move(rpts1s, corner_dot, Lpt1_rpts1s_id, -pixel_per_meter * ROAD_WIDTH / 2);
+            parking_line_type = "Right_L";
+            parking_corner_id = Lpt1_rpts1s_id;
         }
-    } else if (Lpt0_found && Lpt0_rpts0s_id >= 3 && rptsc0_num > 0) {
+    } else if (path_select == PathSelect::LEFT &&
+               Lpt0_found && Lpt0_rpts0s_id >= 3 && Lpt0_rpts0s_id < rptsc0_num) {
         // 左侧线 L 角点：判断条件和右侧线对称，横向方向相反。
         int im0 = clip(Lpt0_rpts0s_id - (int)round(angle_dist / sample_dist), 0, rptsc0_num - 1);
         int ip0 = clip(Lpt0_rpts0s_id + (int)round(angle_dist / sample_dist), 0, rptsc0_num - 1);
@@ -341,12 +347,15 @@ bool handleParkingCorner() {
                          (rptsc0[Lpt0_rpts0s_id][1] > RESULT_ROW - 40);
         if (is_stop_corner) {
             corner_move(rpts0s, corner_dot, Lpt0_rpts0s_id, pixel_per_meter * ROAD_WIDTH / 2);
+            parking_line_type = "Left_L";
+            parking_corner_id = Lpt0_rpts0s_id;
         }
     }
 
     if (!is_stop_corner) {
         // 周期性打印角点检测状态（即使未检测到停车点）
-        ROS_WARN_THROTTLE(2.0, "[PARKING] CornerDetect | L0=%d(id=%d) | L1=%d(id=%d) | Y0=%d(id=%d) | Y1=%d(id=%d) | left_pts=%d | right_pts=%d | parking_enable=%d",
+        ROS_WARN_THROTTLE(2.0, "[PARKING] CornerDetect | path=%s | L0=%d(id=%d) | L1=%d(id=%d) | Y0=%d(id=%d) | Y1=%d(id=%d) | left_pts=%d | right_pts=%d | parking_enable=%d",
+                  pathToString(path_select).c_str(),
                   Lpt0_found, Lpt0_rpts0s_id, Lpt1_found, Lpt1_rpts1s_id,
                   Ypt0_found, Ypt0_rpts0s_id, Ypt1_found, Ypt1_rpts1s_id,
                   rptsc0_num, rptsc1_num, parking_enabled);
@@ -365,18 +374,29 @@ bool handleParkingCorner() {
              "long_dist=%.3fm | lat_bias=%.3fm | line_type=%s | corner_id=%d",
              corner_dot[0], corner_dot[1], cx, cy,
              target_dis, target_dis_x,
-             Lpt1_found ? "Right_L" : "Left_L",
-             Lpt1_found ? Lpt1_rpts1s_id : Lpt0_rpts0s_id);
+             parking_line_type,
+             parking_corner_id);
     publishStatus("PARKING");
 
     int parking_loop_count = 0;  // 停车循环计数器
     ros::Time parking_start_time = ros::Time::now();  // 停车开始时间
     float last_print_dis = target_dis;  // 上次打印时的距离
+    const float parking_extra_dist = 0.215f;
+    const float parking_total_dist = std::max(0.001f, std::abs(target_dis) + parking_extra_dist);
+    float previous_target_dis = target_dis;  // 上一次的目标距离
+    ros::Rate parking_rate(30.0);
 
     while (ros::ok()) {
         ros::spinOnce();
         const ros::Time now = ros::Time::now();
-        const float dt = std::max(0.001, (now - last_time).toSec());
+        float dt = (now - last_time).toSec();
+        
+        // Only integrate with real elapsed time; the rate sleep below prevents
+        // the parking loop from virtually consuming distance in a few ms.
+        if (dt < 0.0f || dt > 0.2f) {
+            ROS_WARN_THROTTLE(1.0, "[PARKING_TIME] Invalid dt=%.4fs, skip distance integration this cycle", dt);
+            dt = 0.0f;
+        }
         last_time = now;
         parking_loop_count++;
 
@@ -388,28 +408,39 @@ bool handleParkingCorner() {
         }
         local_msg.angular.z = 0.0;
 
+        // 保存旧值用于检测异常
+        previous_target_dis = target_dis;
         target_dis -= local_msg.linear.x * dt;
         target_dis_x -= local_msg.linear.y * dt;
 
+        // 检测距离异常（不应该增加）
+        if (target_dis > previous_target_dis && parking_loop_count > 10) {
+            ROS_ERROR("[PARKING_ERROR] Distance increased! prev=%.3fm -> curr=%.3fm | dt=%.4fs",
+                     previous_target_dis, target_dis, dt);
+        }
+
         // 靠近停车点时的调试信息（距离 < 0.5m 时开始打印）
         if (std::abs(target_dis) < 0.5f) {
-            float progress_percent = (1.0f - std::abs(target_dis) / 0.215f) * 100.0f;
+            // Use the full planned parking distance: visible corner distance
+            // plus the configured extra distance after crossing the L point.
+            float remaining_dis = std::max(0.0f, target_dis + parking_extra_dist);
+            float progress_percent = ((parking_total_dist - remaining_dis) / parking_total_dist) * 100.0f;
             float elapsed_sec = (now - parking_start_time).toSec();
             
             // Print when distance changes to avoid spamming
             if (std::abs(target_dis - last_print_dis) > 0.02f) {
                 last_print_dis = target_dis;
                 ROS_WARN("[PARKING_PROGRESS] Approaching... | progress=%.0f%% | long_dist=%.3fm/%.3fm | "
-                         "lat_bias=%.3fm | vel=(%.2f,%.2f) | loops=%d | elapsed=%.2fs",
-                         std::min(progress_percent, 100.0f),
-                         std::abs(target_dis), 0.215f,
+                         "lat_bias=%.3fm | vel=(%.2f,%.2f) | dt=%.4fs | loops=%d | elapsed=%.2fs",
+                         std::max(0.0f, std::min(progress_percent, 100.0f)),
+                         remaining_dis, parking_total_dist,
                          target_dis_x,
                          local_msg.linear.x, local_msg.linear.y,
-                         parking_loop_count, elapsed_sec);
+                         dt, parking_loop_count, elapsed_sec);
             }
         }
 
-        if (target_dis < -0.215f) {
+        if (target_dis < -parking_extra_dist) {
             // 到达停车距离后，先发零速度，再向 end_topic 发布 STOP，
             // 这样外部上层逻辑可以知道本段巡线已经结束。
             
@@ -420,7 +451,7 @@ bool handleParkingCorner() {
                      target_dis_x,
                      parking_loop_count,
                      total_time,
-                     Lpt1_found ? "Right_L" : "Left_L");
+                     parking_line_type);
             
             publishStop();
             std_msgs::String end_msg;
@@ -435,6 +466,7 @@ bool handleParkingCorner() {
         }
 
         pub.publish(local_msg);
+        parking_rate.sleep();
     }
 
     return true;
