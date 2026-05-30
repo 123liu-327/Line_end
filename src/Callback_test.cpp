@@ -160,6 +160,8 @@ void odomCallback(const nav_msgs::Odometry::ConstPtr &msg) {
 
     const float x_now = msg->pose.pose.position.x;
     const float y_now = msg->pose.pose.position.y;
+    current_linear_velocity_x = msg->twist.twist.linear.x;
+
     if (!has_origin) {
         x0 = x_now;
         y0 = y_now;
