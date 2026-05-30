@@ -167,6 +167,12 @@ ros::Time initial_turn_last_time;
 bool initial_turn_has_last_time = false;
 double min_pid_speed = 0.08;
 ros::Time initial_turn_pause_start;
+bool parking_first_corner_seen = false;
+bool parking_first_corner_released = false;
+float parking_first_corner_odom = 0.0f;
+PathSelect parking_first_corner_path = PathSelect::RIGHT;
+int parking_first_corner_id = -1;
+const float parking_second_corner_min_dist = 0.20f;
 
 std::string normalize(std::string value) {
     // 指令统一转成小写，兼容 Left/left/L 等写法。
@@ -187,6 +193,14 @@ std::string pathToString(PathSelect path) {
 
 void publishStatus(const std::string &state);
 void publishDebugImage(const sensor_msgs::ImageConstPtr &source_msg = sensor_msgs::ImageConstPtr());
+
+void resetParkingCornerState() {
+    parking_first_corner_seen = false;
+    parking_first_corner_released = false;
+    parking_first_corner_odom = odom_dist;
+    parking_first_corner_path = path_select;
+    parking_first_corner_id = -1;
+}
 
 double normalizeAngleDeg(double angle) {
     while (angle > 180.0) angle -= 360.0;
@@ -353,12 +367,47 @@ bool handleParkingCorner() {
     }
 
     if (!is_stop_corner) {
+        if (parking_first_corner_seen && !parking_first_corner_released) {
+            parking_first_corner_released = true;
+            ROS_WARN("[PARKING] First square corner released | path=%s | first_id=%d | odom=%.3fm",
+                     pathToString(parking_first_corner_path).c_str(),
+                     parking_first_corner_id,
+                     odom_dist);
+        }
         // 周期性打印角点检测状态（即使未检测到停车点）
         ROS_WARN_THROTTLE(2.0, "[PARKING] CornerDetect | path=%s | L0=%d(id=%d) | L1=%d(id=%d) | Y0=%d(id=%d) | Y1=%d(id=%d) | left_pts=%d | right_pts=%d | parking_enable=%d",
                   pathToString(path_select).c_str(),
                   Lpt0_found, Lpt0_rpts0s_id, Lpt1_found, Lpt1_rpts1s_id,
                   Ypt0_found, Ypt0_rpts0s_id, Ypt1_found, Ypt1_rpts1s_id,
                   rptsc0_num, rptsc1_num, parking_enabled);
+        return false;
+    }
+
+    if (!parking_first_corner_seen || parking_first_corner_path != path_select) {
+        parking_first_corner_seen = true;
+        parking_first_corner_released = false;
+        parking_first_corner_odom = odom_dist;
+        parking_first_corner_path = path_select;
+        parking_first_corner_id = parking_corner_id;
+        ROS_WARN("[PARKING] First square corner ignored | path=%s | line_type=%s | corner_id=%d | odom=%.3fm",
+                 pathToString(path_select).c_str(),
+                 parking_line_type,
+                 parking_corner_id,
+                 odom_dist);
+        return false;
+    }
+
+    const float moved_after_first_corner = std::abs(odom_dist - parking_first_corner_odom);
+    if (!parking_first_corner_released || moved_after_first_corner < parking_second_corner_min_dist) {
+        ROS_WARN_THROTTLE(0.5,
+                          "[PARKING] Waiting second square corner | path=%s | line_type=%s | corner_id=%d | first_id=%d | released=%d | moved=%.3fm/%.3fm",
+                          pathToString(path_select).c_str(),
+                          parking_line_type,
+                          parking_corner_id,
+                          parking_first_corner_id,
+                          parking_first_corner_released,
+                          moved_after_first_corner,
+                          parking_second_corner_min_dist);
         return false;
     }
 
@@ -475,6 +524,7 @@ bool handleParkingCorner() {
                 ros::Duration(0.05).sleep();
             }
             run_car = false;
+            resetParkingCornerState();
             publishStatus("FINISHED");
             return true;
         }

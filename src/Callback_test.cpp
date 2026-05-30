@@ -182,6 +182,7 @@ void beginCallback(const std_msgs::String::ConstPtr &msg) {
         follow_test::motion_state = follow_test::MotionState::IDLE;
         follow_test::initial_turn_integrated_angle_deg = 0.0;
         follow_test::initial_turn_has_last_time = false;
+        follow_test::resetParkingCornerState();
         follow_test::publishStop();
         follow_test::publishStatus("IDLE");
         ROS_WARN("[CMD] 停车指令 | command=%s | 状态=IDLE", msg->data.c_str());
@@ -197,6 +198,7 @@ void beginCallback(const std_msgs::String::ConstPtr &msg) {
     run_car = true;
     zeroCount = 0;
     zero_flag = false;
+    follow_test::resetParkingCornerState();
     follow_test::startInitialTurnIfNeeded();
     
     // 启动调试信息

@@ -58,6 +58,7 @@ void configureVideo(bool enable_record, int fps, const std::string &save_path);
 
 void initializeImagePipeline();
 void startInitialTurnIfNeeded();
+void resetParkingCornerState();
 void publishStatus(const std::string &state);
 void publishStop();
 int followLineTestOnce();
