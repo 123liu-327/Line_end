@@ -69,15 +69,8 @@
   <arg name="y_turn_angle_deg" default="45.0" />
   <arg name="y_turn_angular_speed" default="0.35" />
   <arg name="y_turn_pause_sec" default="0.5" />
-  <arg name="y_detect_min_id" default="35" />
-  <arg name="y_center_aim_dist" default="0.45" />
-  <arg name="y_approach_speed" default="0.18" />
-  <arg name="y_center_max_wz" default="0.25" />
-  <arg name="y_lost_confirm_frames" default="3" />
-  <arg name="y_entry_min_odom" default="0.08" />
-  <arg name="y_entry_max_odom" default="0.45" />
-  <arg name="y_detect_max_id" default="80" />
-  <arg name="y_detect_confirm_frames" default="2" />
+  <arg name="y_detect_max_id" default="20" />
+  <arg name="y_detect_confirm_frames" default="3" />
 
   <!-- 是否启用起步预转角。Left/Right 会先原地转向目标岔路，Middle 不预转。 -->
   <arg name="initial_turn_enabled" default="true" />
