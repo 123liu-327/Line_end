@@ -581,7 +581,7 @@ bool handleParkingCorner() {
     float last_print_dis = target_dis;  // 上次打印时的距离
     const float initial_target_dis = target_dis;
     const float parking_start_odom = odom_dist;
-    const float parking_extra_dist = 0.101f;
+    const float parking_extra_dist = 0.001f;
     const float parking_total_dist = std::max(0.001f, std::abs(target_dis) + parking_extra_dist);
     float parking_moved_from_velocity = 0.0f;
     float previous_target_dis = target_dis;  // 上一次的目标距离

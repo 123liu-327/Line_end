@@ -32,7 +32,7 @@
   <arg name="left_dis_bias_left" default="6.0" />
   <arg name="left_dis_bias_right" default="0.0" />
   <arg name="right_dis_bias_left" default="0.0" />
-  <arg name="right_dis_bias_right" default="-15.0" />
+  <arg name="right_dis_bias_right" default="-30.0" />
   <arg name="middle_dis_bias_left" default="0.0" />
   <arg name="middle_dis_bias_right" default="0.0" />
   <arg name="time_local" default="0.5" />
@@ -74,7 +74,7 @@
   <arg name="initial_turn_enabled" default="true" />
 
   <!-- 起步预转最大角度，单位：度。达到该角度后停止预转。 -->
-  <arg name="initial_turn_angle_deg" default="65" />
+  <arg name="initial_turn_angle_deg" default="60" />
 
   <!-- 起步预转角速度，单位：rad/s。Left 为正，Right 为负。 -->
   <arg name="initial_turn_angular_speed" default="0.35" />
