@@ -885,6 +885,16 @@ void publishDebugImage(const sensor_msgs::ImageConstPtr &source_msg) {
 
     cv::Mat debug_gray = convert2DArrayToMat(img_line_data);
 
+    if (publish_debug_image && debug_pub) {
+        std_msgs::Header header;
+        if (source_msg) {
+            header = source_msg->header;
+        }
+        sensor_msgs::ImagePtr msg = cv_bridge::CvImage(
+            header, sensor_msgs::image_encodings::MONO8, debug_gray).toImageMsg();
+        debug_pub.publish(msg);
+    }
+
     // 显示窗口（如果启用）
     if (show_window) {
         cv::imshow("follow_test", debug_gray);
