@@ -19,6 +19,7 @@ enum class MotionState {
     FOLLOWING,
     FOLLOWING_STRAIGHT,
     Y_APPROACH,
+    Y_CENTER_APPROACH,
     Y_ALIGNING_LEFT,
     Y_ALIGNING_RIGHT,
     Y_ALIGN_PAUSE
@@ -53,8 +54,15 @@ extern double y_approach_dist;
 extern double y_turn_angle_deg;
 extern double y_turn_angular_speed;
 extern double y_turn_pause_sec;
+extern int y_detect_min_id;
 extern int y_detect_max_id;
 extern int y_detect_confirm_frames;
+extern double y_center_aim_dist;
+extern double y_approach_speed;
+extern double y_center_max_wz;
+extern int y_lost_confirm_frames;
+extern double y_entry_min_odom;
+extern double y_entry_max_odom;
 
 // 视频保存相关配置
 extern bool enable_video_record;
@@ -78,7 +86,11 @@ void configure(bool publish_debug, bool show_debug_window, bool enable_parking,
                double initial_turn_pause_sec, double min_pid_speed,
                double y_approach_dist, double y_turn_angle_deg,
                double y_turn_angular_speed, double y_turn_pause_sec,
-               int y_detect_max_id, int y_detect_confirm_frames);
+               int y_detect_min_id, int y_detect_max_id,
+               int y_detect_confirm_frames, double y_center_aim_dist,
+               double y_approach_speed, double y_center_max_wz,
+               int y_lost_confirm_frames, double y_entry_min_odom,
+               double y_entry_max_odom);
 
 void configureVideo(bool enable_record, int fps, const std::string &save_path);
 
