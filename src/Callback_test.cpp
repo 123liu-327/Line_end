@@ -95,6 +95,10 @@ void refreshRuntimeParams() {
     int turn_rpts_threshold = follow_test::initial_turn_rpts_threshold;
     double turn_pause_sec = follow_test::initial_turn_pause_sec;
     double min_turn_pid_speed = follow_test::min_pid_speed;
+    double branch_approach_dist = follow_test::y_approach_dist;
+    double branch_turn_angle_deg = follow_test::y_turn_angle_deg;
+    double branch_turn_angular_speed = follow_test::y_turn_angular_speed;
+    double branch_turn_pause_sec = follow_test::y_turn_pause_sec;
 
     private_nh.param<bool>("publish_debug_image", publish_debug, publish_debug);
     private_nh.param<bool>("show_window", show_debug_window, show_debug_window);
@@ -108,12 +112,18 @@ void refreshRuntimeParams() {
     private_nh.param<int>("initial_turn_rpts_threshold", turn_rpts_threshold, turn_rpts_threshold);
     private_nh.param<double>("initial_turn_pause_sec", turn_pause_sec, turn_pause_sec);
     private_nh.param<double>("min_pid_speed", min_turn_pid_speed, min_turn_pid_speed);
+    private_nh.param<double>("y_approach_dist", branch_approach_dist, branch_approach_dist);
+    private_nh.param<double>("y_turn_angle_deg", branch_turn_angle_deg, branch_turn_angle_deg);
+    private_nh.param<double>("y_turn_angular_speed", branch_turn_angular_speed, branch_turn_angular_speed);
+    private_nh.param<double>("y_turn_pause_sec", branch_turn_pause_sec, branch_turn_pause_sec);
 
     follow_test::configure(publish_debug, show_debug_window, enable_parking,
                            speed, distance, y_bias_m, enable_initial_turn,
                            turn_angle_deg, turn_angular_speed,
                            turn_rpts_threshold, turn_pause_sec,
-                           min_turn_pid_speed);
+                           min_turn_pid_speed,
+                           branch_approach_dist, branch_turn_angle_deg,
+                           branch_turn_angular_speed, branch_turn_pause_sec);
 }
 
 void advertiseTopics(ros::NodeHandle &nh, const std::string &cmd_vel_topic,

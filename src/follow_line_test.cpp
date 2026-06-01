@@ -1,4 +1,4 @@
-#include <flow_end/follow.h>
+﻿#include <flow_end/follow.h>
 #include <flow_end/follow_line_test.h>
 #include <flow_end/ImagePerspectiveInit.h>
 #include <flow_end/MatTransform.h>
@@ -167,6 +167,18 @@ ros::Time initial_turn_last_time;
 bool initial_turn_has_last_time = false;
 double min_pid_speed = 0.08;
 ros::Time initial_turn_pause_start;
+bool y_branch_mode_requested = false;
+PathSelect pending_branch_path = PathSelect::RIGHT;
+double y_approach_dist = 0.20;
+double y_turn_angle_deg = 45.0;
+double y_turn_angular_speed = 0.35;
+double y_turn_pause_sec = 0.5;
+double y_turn_integrated_angle_deg = 0.0;
+ros::Time y_turn_last_time;
+bool y_turn_has_last_time = false;
+ros::Time y_approach_start_time;
+float y_approach_start_odom = 0.0f;
+ros::Time y_turn_pause_start;
 bool parking_first_corner_seen = false;
 bool parking_first_corner_released = false;
 float parking_first_corner_odom = 0.0f;
@@ -219,6 +231,16 @@ int selectedPathPointCount() {
 }
 
 void startInitialTurnIfNeeded() {
+    if (y_branch_mode_requested) {
+        motion_state = MotionState::FOLLOWING_STRAIGHT;
+        y_turn_integrated_angle_deg = 0.0;
+        y_turn_has_last_time = false;
+        resetParkingCornerState();
+        pid.reset();
+        publishStatus("Y_SEARCH_" + pathToString(pending_branch_path));
+        return;
+    }
+
     if (!initial_turn_enabled || path_select == PathSelect::MIDDLE) {
         motion_state = MotionState::FOLLOWING;
         publishStatus("RUNNING_" + pathToString(path_select));
@@ -237,18 +259,38 @@ void startInitialTurnIfNeeded() {
 
 bool setPathSelect(const std::string &raw_value) {
     const std::string value = normalize(raw_value);
+    if (value == "yleft" || value == "y_left" || value == "yl") {
+        path_select = PathSelect::MIDDLE;
+        pending_branch_path = PathSelect::LEFT;
+        y_branch_mode_requested = true;
+        track_type = TRACK_MIDDLE;
+        return true;
+    }
+    if (value == "yright" || value == "y_right" || value == "yr") {
+        path_select = PathSelect::MIDDLE;
+        pending_branch_path = PathSelect::RIGHT;
+        y_branch_mode_requested = true;
+        track_type = TRACK_MIDDLE;
+        return true;
+    }
     if (value == "left" || value == "l") {
         path_select = PathSelect::LEFT;
+        pending_branch_path = PathSelect::LEFT;
+        y_branch_mode_requested = false;
         track_type = TRACK_LEFT;
         return true;
     }
     if (value == "middle" || value == "mid" || value == "center" || value == "centre" || value == "m") {
         path_select = PathSelect::MIDDLE;
+        pending_branch_path = PathSelect::MIDDLE;
+        y_branch_mode_requested = false;
         track_type = TRACK_MIDDLE;
         return true;
     }
     if (value == "right" || value == "r") {
         path_select = PathSelect::RIGHT;
+        pending_branch_path = PathSelect::RIGHT;
+        y_branch_mode_requested = false;
         track_type = TRACK_RIGHT;
         return true;
     }
@@ -322,6 +364,113 @@ void detectCorners() {
         }
         if (Ypt1_found && Lpt1_found && !is_straight1) break;
     }
+}
+
+bool handleYBranchFlow() {
+    if (motion_state == MotionState::FOLLOWING_STRAIGHT) {
+        if (Ypt0_found || Ypt1_found) {
+            motion_state = MotionState::Y_APPROACH;
+            y_approach_start_odom = odom_dist;
+            y_approach_start_time = ros::Time::now();
+            publishStatus("Y_APPROACH_" + pathToString(pending_branch_path));
+            ROS_WARN("[Y_BRANCH] Detected | next_path=%s | Y0=%d(id=%d) | Y1=%d(id=%d) | odom=%.3fm",
+                     pathToString(pending_branch_path).c_str(),
+                     Ypt0_found, Ypt0_rpts0s_id,
+                     Ypt1_found, Ypt1_rpts1s_id,
+                     odom_dist);
+        }
+        return false;
+    }
+
+    if (motion_state == MotionState::Y_APPROACH) {
+        const float moved = std::abs(odom_dist - y_approach_start_odom);
+        if (moved >= static_cast<float>(y_approach_dist)) {
+            motion_state = pending_branch_path == PathSelect::LEFT ?
+                           MotionState::Y_ALIGNING_LEFT : MotionState::Y_ALIGNING_RIGHT;
+            y_turn_integrated_angle_deg = 0.0;
+            y_turn_last_time = ros::Time::now();
+            y_turn_has_last_time = true;
+            pid.reset();
+            publishStatus("Y_TURN_" + pathToString(pending_branch_path));
+            ROS_WARN("[Y_BRANCH] Approach finished | next_path=%s | moved=%.3fm/%.3fm",
+                     pathToString(pending_branch_path).c_str(), moved, y_approach_dist);
+            return true;
+        }
+
+        geometry_msgs::Twist msg;
+        msg.linear.x = std::min(0.18, std::max(0.08, base_speed * 0.6));
+        msg.angular.z = 0.0;
+        pub.publish(msg);
+
+        const double elapsed = (ros::Time::now() - y_approach_start_time).toSec();
+        ROS_WARN_THROTTLE(0.5,
+                          "[Y_BRANCH] Approaching | next_path=%s | moved=%.3fm/%.3fm | v=%.2f | elapsed=%.2fs",
+                          pathToString(pending_branch_path).c_str(),
+                          moved, y_approach_dist,
+                          msg.linear.x, elapsed);
+        return true;
+    }
+
+    if (motion_state == MotionState::Y_ALIGNING_LEFT ||
+        motion_state == MotionState::Y_ALIGNING_RIGHT) {
+        const ros::Time now = ros::Time::now();
+        double dt = 0.0;
+        if (y_turn_has_last_time) {
+            dt = (now - y_turn_last_time).toSec();
+        }
+        y_turn_last_time = now;
+        y_turn_has_last_time = true;
+
+        if (dt > 0.0 && dt < 0.2) {
+            y_turn_integrated_angle_deg += std::abs(curent_wz) * dt * 180.0 / M_PI;
+        }
+
+        if (y_turn_integrated_angle_deg >= y_turn_angle_deg) {
+            publishStop();
+            motion_state = MotionState::Y_ALIGN_PAUSE;
+            y_turn_pause_start = ros::Time::now();
+            publishStatus("Y_TURN_PAUSE_" + pathToString(pending_branch_path));
+            ROS_WARN("[Y_TURN] Finished | next_path=%s | integrated_angle=%.2fdeg/%.2fdeg | wz=%.3f",
+                     pathToString(pending_branch_path).c_str(),
+                     y_turn_integrated_angle_deg, y_turn_angle_deg, curent_wz);
+            return true;
+        }
+
+        geometry_msgs::Twist msg;
+        msg.linear.x = 0.0;
+        msg.angular.z = motion_state == MotionState::Y_ALIGNING_LEFT ?
+                        std::abs(y_turn_angular_speed) : -std::abs(y_turn_angular_speed);
+        pub.publish(msg);
+
+        ROS_WARN_THROTTLE(0.5,
+                          "[Y_TURN] Turning | next_path=%s | integrated_angle=%.2fdeg/%.2fdeg | wz=%.3f rad/s | dt=%.3fs | turn_direction=%s",
+                          pathToString(pending_branch_path).c_str(),
+                          y_turn_integrated_angle_deg, y_turn_angle_deg,
+                          curent_wz, dt,
+                          motion_state == MotionState::Y_ALIGNING_LEFT ? "LEFT" : "RIGHT");
+        return true;
+    }
+
+    if (motion_state == MotionState::Y_ALIGN_PAUSE) {
+        geometry_msgs::Twist stop_msg;
+        pub.publish(stop_msg);
+
+        const double elapsed = (ros::Time::now() - y_turn_pause_start).toSec();
+        if (elapsed >= y_turn_pause_sec) {
+            path_select = pending_branch_path;
+            track_type = path_select == PathSelect::LEFT ? TRACK_LEFT : TRACK_RIGHT;
+            y_branch_mode_requested = false;
+            y_turn_has_last_time = false;
+            motion_state = MotionState::FOLLOWING;
+            resetParkingCornerState();
+            publishStatus("RUNNING_" + pathToString(path_select));
+            ROS_WARN("[Y_BRANCH] Switched to branch follow | path=%s | pause=%.2fs",
+                     pathToString(path_select).c_str(), elapsed);
+        }
+        return true;
+    }
+
+    return false;
 }
 
 bool handleParkingCorner() {
@@ -432,7 +581,7 @@ bool handleParkingCorner() {
     float last_print_dis = target_dis;  // 上次打印时的距离
     const float initial_target_dis = target_dis;
     const float parking_start_odom = odom_dist;
-    const float parking_extra_dist = 0.215f;
+    const float parking_extra_dist = 0.101f;
     const float parking_total_dist = std::max(0.001f, std::abs(target_dis) + parking_extra_dist);
     float parking_moved_from_velocity = 0.0f;
     float previous_target_dis = target_dis;  // 上一次的目标距离
@@ -788,6 +937,10 @@ int followLineTestOnce() {
         return 0;
     }
 
+    if (handleYBranchFlow()) {
+        return 0;
+    }
+
     if (handleParkingCorner()) {
         // 检测到停车角点并完成停车后，本轮不再继续发布巡线速度。
         return 0;
@@ -843,6 +996,21 @@ void configure(bool publish_debug, bool show_debug_window, bool enable_parking,
                bool enable_initial_turn, double turn_angle_deg,
                double turn_angular_speed, int turn_rpts_threshold,
                double turn_pause_sec, double min_turn_pid_speed) {
+    configure(publish_debug, show_debug_window, enable_parking,
+              speed, distance, y_bias_m, enable_initial_turn,
+              turn_angle_deg, turn_angular_speed, turn_rpts_threshold,
+              turn_pause_sec, min_turn_pid_speed,
+              y_approach_dist, y_turn_angle_deg,
+              y_turn_angular_speed, y_turn_pause_sec);
+}
+
+void configure(bool publish_debug, bool show_debug_window, bool enable_parking,
+               double speed, double distance, double y_bias_m,
+               bool enable_initial_turn, double turn_angle_deg,
+               double turn_angular_speed, int turn_rpts_threshold,
+               double turn_pause_sec, double min_turn_pid_speed,
+               double branch_approach_dist, double branch_turn_angle_deg,
+               double branch_turn_angular_speed, double branch_turn_pause_sec) {
     // 保存 launch 参数，供后续图像调试、停车开关和速度控制使用。
     publish_debug_image = publish_debug;
     show_window = show_debug_window;
@@ -856,6 +1024,10 @@ void configure(bool publish_debug, bool show_debug_window, bool enable_parking,
     initial_turn_rpts_threshold = std::max(1, turn_rpts_threshold);
     initial_turn_pause_sec = std::max(0.0, turn_pause_sec);
     min_pid_speed = std::max(0.0, min_turn_pid_speed);
+    y_approach_dist = std::max(0.0, branch_approach_dist);
+    y_turn_angle_deg = std::max(0.0, branch_turn_angle_deg);
+    y_turn_angular_speed = std::max(0.0, branch_turn_angular_speed);
+    y_turn_pause_sec = std::max(0.0, branch_turn_pause_sec);
 }
 
 void configureVideo(bool enable_record, int fps, const std::string &save_path) {
