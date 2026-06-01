@@ -173,6 +173,9 @@ double y_approach_dist = 0.20;
 double y_turn_angle_deg = 45.0;
 double y_turn_angular_speed = 0.35;
 double y_turn_pause_sec = 0.5;
+int y_detect_max_id = 15;
+int y_detect_confirm_frames = 3;
+int y_detect_confirm_count = 0;
 double y_turn_integrated_angle_deg = 0.0;
 ros::Time y_turn_last_time;
 bool y_turn_has_last_time = false;
@@ -235,6 +238,7 @@ void startInitialTurnIfNeeded() {
         motion_state = MotionState::FOLLOWING_STRAIGHT;
         y_turn_integrated_angle_deg = 0.0;
         y_turn_has_last_time = false;
+        y_detect_confirm_count = 0;
         resetParkingCornerState();
         pid.reset();
         publishStatus("Y_SEARCH_" + pathToString(pending_branch_path));
@@ -368,15 +372,35 @@ void detectCorners() {
 
 bool handleYBranchFlow() {
     if (motion_state == MotionState::FOLLOWING_STRAIGHT) {
-        if (Ypt0_found || Ypt1_found) {
+        const bool near_y0 = Ypt0_found && Ypt0_rpts0s_id <= y_detect_max_id;
+        const bool near_y1 = Ypt1_found && Ypt1_rpts1s_id <= y_detect_max_id;
+        if (near_y0 || near_y1) {
+            y_detect_confirm_count++;
+        } else {
+            y_detect_confirm_count = 0;
+        }
+
+        ROS_WARN_THROTTLE(0.5,
+                          "[Y_BRANCH] Searching | next_path=%s | Y0=%d(id=%d) | Y1=%d(id=%d) | near=%d | confirm=%d/%d | max_id=%d",
+                          pathToString(pending_branch_path).c_str(),
+                          Ypt0_found, Ypt0_rpts0s_id,
+                          Ypt1_found, Ypt1_rpts1s_id,
+                          near_y0 || near_y1,
+                          y_detect_confirm_count,
+                          y_detect_confirm_frames,
+                          y_detect_max_id);
+
+        if (y_detect_confirm_count >= y_detect_confirm_frames) {
             motion_state = MotionState::Y_APPROACH;
             y_approach_start_odom = odom_dist;
             y_approach_start_time = ros::Time::now();
             publishStatus("Y_APPROACH_" + pathToString(pending_branch_path));
-            ROS_WARN("[Y_BRANCH] Detected | next_path=%s | Y0=%d(id=%d) | Y1=%d(id=%d) | odom=%.3fm",
+            ROS_WARN("[Y_BRANCH] Detected | next_path=%s | Y0=%d(id=%d) | Y1=%d(id=%d) | confirm=%d/%d | odom=%.3fm",
                      pathToString(pending_branch_path).c_str(),
                      Ypt0_found, Ypt0_rpts0s_id,
                      Ypt1_found, Ypt1_rpts1s_id,
+                     y_detect_confirm_count,
+                     y_detect_confirm_frames,
                      odom_dist);
         }
         return false;
@@ -1001,7 +1025,8 @@ void configure(bool publish_debug, bool show_debug_window, bool enable_parking,
               turn_angle_deg, turn_angular_speed, turn_rpts_threshold,
               turn_pause_sec, min_turn_pid_speed,
               y_approach_dist, y_turn_angle_deg,
-              y_turn_angular_speed, y_turn_pause_sec);
+              y_turn_angular_speed, y_turn_pause_sec,
+              y_detect_max_id, y_detect_confirm_frames);
 }
 
 void configure(bool publish_debug, bool show_debug_window, bool enable_parking,
@@ -1010,7 +1035,8 @@ void configure(bool publish_debug, bool show_debug_window, bool enable_parking,
                double turn_angular_speed, int turn_rpts_threshold,
                double turn_pause_sec, double min_turn_pid_speed,
                double branch_approach_dist, double branch_turn_angle_deg,
-               double branch_turn_angular_speed, double branch_turn_pause_sec) {
+               double branch_turn_angular_speed, double branch_turn_pause_sec,
+               int branch_detect_max_id, int branch_detect_confirm_frames) {
     // 保存 launch 参数，供后续图像调试、停车开关和速度控制使用。
     publish_debug_image = publish_debug;
     show_window = show_debug_window;
@@ -1028,6 +1054,8 @@ void configure(bool publish_debug, bool show_debug_window, bool enable_parking,
     y_turn_angle_deg = std::max(0.0, branch_turn_angle_deg);
     y_turn_angular_speed = std::max(0.0, branch_turn_angular_speed);
     y_turn_pause_sec = std::max(0.0, branch_turn_pause_sec);
+    y_detect_max_id = std::max(1, branch_detect_max_id);
+    y_detect_confirm_frames = std::max(1, branch_detect_confirm_frames);
 }
 
 void configureVideo(bool enable_record, int fps, const std::string &save_path) {

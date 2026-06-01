@@ -99,6 +99,8 @@ void refreshRuntimeParams() {
     double branch_turn_angle_deg = follow_test::y_turn_angle_deg;
     double branch_turn_angular_speed = follow_test::y_turn_angular_speed;
     double branch_turn_pause_sec = follow_test::y_turn_pause_sec;
+    int branch_detect_max_id = follow_test::y_detect_max_id;
+    int branch_detect_confirm_frames = follow_test::y_detect_confirm_frames;
 
     private_nh.param<bool>("publish_debug_image", publish_debug, publish_debug);
     private_nh.param<bool>("show_window", show_debug_window, show_debug_window);
@@ -116,6 +118,8 @@ void refreshRuntimeParams() {
     private_nh.param<double>("y_turn_angle_deg", branch_turn_angle_deg, branch_turn_angle_deg);
     private_nh.param<double>("y_turn_angular_speed", branch_turn_angular_speed, branch_turn_angular_speed);
     private_nh.param<double>("y_turn_pause_sec", branch_turn_pause_sec, branch_turn_pause_sec);
+    private_nh.param<int>("y_detect_max_id", branch_detect_max_id, branch_detect_max_id);
+    private_nh.param<int>("y_detect_confirm_frames", branch_detect_confirm_frames, branch_detect_confirm_frames);
 
     follow_test::configure(publish_debug, show_debug_window, enable_parking,
                            speed, distance, y_bias_m, enable_initial_turn,
@@ -123,7 +127,8 @@ void refreshRuntimeParams() {
                            turn_rpts_threshold, turn_pause_sec,
                            min_turn_pid_speed,
                            branch_approach_dist, branch_turn_angle_deg,
-                           branch_turn_angular_speed, branch_turn_pause_sec);
+                           branch_turn_angular_speed, branch_turn_pause_sec,
+                           branch_detect_max_id, branch_detect_confirm_frames);
 }
 
 void advertiseTopics(ros::NodeHandle &nh, const std::string &cmd_vel_topic,
