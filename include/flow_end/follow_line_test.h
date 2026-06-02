@@ -2,6 +2,7 @@
 #define FLOW_END_FOLLOW_LINE_TEST_H
 
 #include <flow_end/follow.h>
+#include <flow_end/follow_motion_controller.h>
 
 #include <ros/ros.h>
 
@@ -93,6 +94,8 @@ void configure(bool publish_debug, bool show_debug_window, bool enable_parking,
                double y_entry_max_odom);
 
 void configureVideo(bool enable_record, int fps, const std::string &save_path);
+void configureMotionController(const MotionControlConfig &config);
+void resetMotionController();
 
 void initializeImagePipeline();
 void startInitialTurnIfNeeded();

@@ -1,5 +1,6 @@
 ﻿#include <flow_end/follow.h>
 #include <flow_end/follow_line_test.h>
+#include <flow_end/follow_motion_controller.h>
 #include <flow_end/ImagePerspectiveInit.h>
 #include <flow_end/MatTransform.h>
 #include <flow_end/process_image.h>
@@ -196,6 +197,15 @@ float parking_first_corner_odom = 0.0f;
 PathSelect parking_first_corner_path = PathSelect::RIGHT;
 int parking_first_corner_id = -1;
 const float parking_second_corner_min_dist = 0.20f;
+FollowMotionController motion_controller;
+
+void configureMotionController(const MotionControlConfig &config) {
+    motion_controller.configure(config);
+}
+
+void resetMotionController() {
+    motion_controller.reset();
+}
 
 std::string normalize(std::string value) {
     // 指令统一转成小写，兼容 Left/left/L 等写法。
@@ -242,6 +252,7 @@ int selectedPathPointCount() {
 }
 
 void startInitialTurnIfNeeded() {
+    resetMotionController();
     if (y_branch_mode_requested) {
         motion_state = MotionState::FOLLOWING_STRAIGHT;
         y_turn_integrated_angle_deg = 0.0;
@@ -273,6 +284,7 @@ void startInitialTurnIfNeeded() {
 bool setPathSelect(const std::string &raw_value) {
     const std::string value = normalize(raw_value);
     if (value == "yleft" || value == "y_left" || value == "yl") {
+        resetMotionController();
         path_select = PathSelect::MIDDLE;
         pending_branch_path = PathSelect::LEFT;
         y_branch_mode_requested = true;
@@ -280,6 +292,7 @@ bool setPathSelect(const std::string &raw_value) {
         return true;
     }
     if (value == "yright" || value == "y_right" || value == "yr") {
+        resetMotionController();
         path_select = PathSelect::MIDDLE;
         pending_branch_path = PathSelect::RIGHT;
         y_branch_mode_requested = true;
@@ -287,6 +300,7 @@ bool setPathSelect(const std::string &raw_value) {
         return true;
     }
     if (value == "left" || value == "l") {
+        resetMotionController();
         path_select = PathSelect::LEFT;
         pending_branch_path = PathSelect::LEFT;
         y_branch_mode_requested = false;
@@ -294,6 +308,7 @@ bool setPathSelect(const std::string &raw_value) {
         return true;
     }
     if (value == "middle" || value == "mid" || value == "center" || value == "centre" || value == "m") {
+        resetMotionController();
         path_select = PathSelect::MIDDLE;
         pending_branch_path = PathSelect::MIDDLE;
         y_branch_mode_requested = false;
@@ -301,6 +316,7 @@ bool setPathSelect(const std::string &raw_value) {
         return true;
     }
     if (value == "right" || value == "r") {
+        resetMotionController();
         path_select = PathSelect::RIGHT;
         pending_branch_path = PathSelect::RIGHT;
         y_branch_mode_requested = false;
@@ -312,6 +328,7 @@ bool setPathSelect(const std::string &raw_value) {
 
 void publishStop() {
     // 连续发布零速度，比只发一次更可靠，避免底盘控制器错过停车指令。
+    resetMotionController();
     geometry_msgs::Twist stop_msg;
     for (int i = 0; i < 10; ++i) {
         pub.publish(stop_msg);
@@ -437,6 +454,7 @@ bool handleYBranchFlow() {
         const bool reached_by_max_odom = moved >= static_cast<float>(y_entry_max_odom);
 
         if (reached_by_lost_lines || reached_by_max_odom) {
+            resetMotionController();
             motion_state = pending_branch_path == PathSelect::LEFT ?
                            MotionState::Y_ALIGNING_LEFT : MotionState::Y_ALIGNING_RIGHT;
             y_turn_integrated_angle_deg = 0.0;
@@ -453,31 +471,35 @@ bool handleYBranchFlow() {
             return true;
         }
 
-        geometry_msgs::Twist msg;
-        float error = 0.0f;
-        if (rpts_num > 0 && rpts != nullptr) {
-            const int aim_idx = clip(round(y_center_aim_dist / sample_dist), 0, rpts_num - 1);
-            const float cx = RESULT_COL / 2.0f;
-            const float cy = RESULT_ROW + 10.0f;
-            const float dx = rpts[aim_idx][0] - cx;
-            const float dy = cy - rpts[aim_idx][1];
-            error = -atan2f(dx, dy);
-        }
-        msg.linear.x = std::max(0.05, y_approach_speed);
-        msg.angular.z = std::max(-y_center_max_wz, std::min(y_center_max_wz, static_cast<double>(error)));
-        pub.publish(msg);
+        MotionControlInput control_input;
+        control_input.path = rpts;
+        control_input.path_num = rpts_num;
+        control_input.path_key = static_cast<int>(path_select);
+        control_input.path_name = pathToString(path_select);
+        control_input.degraded = is_degraded_mode;
+        control_input.base_speed = y_approach_speed;
+        control_input.aim_distance = y_center_aim_dist;
+        control_input.aim_y_bias_m = 0.0;
+        control_input.sample_dist = sample_dist;
+        control_input.pixel_per_meter = pixel_per_meter;
+        control_input.image_width = RESULT_COL;
+        control_input.image_height = RESULT_ROW;
+        control_input.allow_lost_coast = false;
+        control_input.max_wz_override = y_center_max_wz;
+        const MotionControlOutput control_output = motion_controller.compute(control_input);
+        pub.publish(control_output.cmd);
 
         const double elapsed = (ros::Time::now() - y_approach_start_time).toSec();
         ROS_WARN_THROTTLE(0.5,
                           "[Y_BRANCH] Center approaching | next_path=%s | rpts=%d | error=%.3f | moved=%.3fm | lost=%d/%d | v=%.2f | wz=%.2f | elapsed=%.2fs",
                           pathToString(pending_branch_path).c_str(),
                           rpts_num,
-                          error,
+                          control_output.filtered_error,
                           moved,
                           y_entry_lost_count,
                           y_lost_confirm_frames,
-                          msg.linear.x,
-                          msg.angular.z,
+                          control_output.cmd.linear.x,
+                          control_output.cmd.angular.z,
                           elapsed);
         return true;
     }
@@ -533,6 +555,7 @@ bool handleYBranchFlow() {
             y_branch_mode_requested = false;
             y_turn_has_last_time = false;
             motion_state = MotionState::FOLLOWING;
+            resetMotionController();
             resetParkingCornerState();
             publishStatus("RUNNING_" + pathToString(path_select));
             ROS_WARN("[Y_BRANCH] Switched to branch follow | path=%s | pause=%.2fs",
@@ -646,6 +669,7 @@ bool handleParkingCorner() {
              parking_line_type,
              parking_corner_id);
     publishStatus("PARKING");
+    resetMotionController();
 
     int parking_loop_count = 0;  // 停车循环计数器
     ros::Time parking_start_time = ros::Time::now();  // 停车开始时间
@@ -662,7 +686,7 @@ bool handleParkingCorner() {
         ros::spinOnce();
         const ros::Time now = ros::Time::now();
         float dt = (now - last_time).toSec();
-        
+
         // Only integrate with real elapsed time; the rate sleep below prevents
         // the parking loop from virtually consuming distance in a few ms.
         if (dt < 0.0f || dt > 0.2f) {
@@ -707,7 +731,7 @@ bool handleParkingCorner() {
             // plus the configured extra distance after crossing the L point.
             float remaining_dis = std::max(0.0f, parking_total_dist - parking_moved);
             float progress_percent = ((parking_total_dist - remaining_dis) / parking_total_dist) * 100.0f;
-            
+
             // Print when distance changes to avoid spamming
             if (std::abs(target_dis - last_print_dis) > 0.02f) {
                 last_print_dis = target_dis;
@@ -724,7 +748,7 @@ bool handleParkingCorner() {
         if (parking_moved >= parking_total_dist) {
             // 到达停车距离后，先发零速度，再向 end_topic 发布 STOP，
             // 这样外部上层逻辑可以知道本段巡线已经结束。
-            
+
             float total_time = (now - parking_start_time).toSec();
             ROS_WARN("[PARKING] Parking finished! | final_long_dist=%.3fm | final_lat_bias=%.3fm | "
                      "odom_moved=%.3fm/%.3fm | total_loops=%d | total_time=%.2fs | line_type=%s",
@@ -735,7 +759,7 @@ bool handleParkingCorner() {
                      parking_loop_count,
                      total_time,
                      parking_line_type);
-            
+
             publishStop();
             std_msgs::String end_msg;
             end_msg.data = "STOP";
@@ -1027,43 +1051,49 @@ int followLineTestOnce() {
         return 0;
     }
 
-    float error = 0.0f;
-    float v = 0.0f;
     if (rpts_num == 0) {
-        // 连续丢线时逐步停车；偶发一帧丢线时仍低速前进，减少图像抖动影响。
         zeroCount++;
         if (zeroCount >= 2) {
             zero_flag = true;
         }
-        error = 0.0f;
-        v = zero_flag ? 0.0f : 0.15f;
     } else {
         zeroCount = 0;
         zero_flag = false;
-        // 取前方 aim_distance 处的路径点作为瞄准点。
-        // dx/dy 转成 atan2 角度误差，再用误差大小降低线速度。
-        const int aim_idx = clip(round(aim_distance / sample_dist), 0, rpts_num - 1);
-        const float cx = RESULT_COL / 2.0f;
-        const float cy = RESULT_ROW + 10.0f;
-        const float dx = rpts[aim_idx][0] - cx;
-        const float dy = cy - rpts[aim_idx][1] + aim_y_bias_m * pixel_per_meter;
-        error = -atan2f(dx, dy);
-        v = static_cast<float>(base_speed - std::abs(error) * base_speed);
-        v = std::max(0.05f, v);
     }
 
-    geometry_msgs::Twist msg;
-    msg.linear.x = v;
-    msg.angular.z = error;//这里的error具体作用，如果为0，则小车会原地转圈，如果为正，则小车会向左转，如果为负，则小车会向右转
+    MotionControlInput control_input;
+    control_input.path = rpts;
+    control_input.path_num = rpts_num;
+    control_input.path_key = static_cast<int>(path_select);
+    control_input.path_name = pathToString(path_select);
+    control_input.degraded = is_degraded_mode;
+    control_input.base_speed = base_speed;
+    control_input.aim_distance = aim_distance;
+    control_input.aim_y_bias_m = aim_y_bias_m;
+    control_input.sample_dist = sample_dist;
+    control_input.pixel_per_meter = pixel_per_meter;
+    control_input.image_width = RESULT_COL;
+    control_input.image_height = RESULT_ROW;
+    control_input.allow_lost_coast = true;
 
-    pub.publish(msg);
+    const MotionControlOutput control_output = motion_controller.compute(control_input);
+    pub.publish(control_output.cmd);
     publishDebugImage();
 // 主循环调试信息：输出当前选用的路径、路径点数量、是否退化、误差和速度，以及角点检测状态和丢线计数。
 ROS_WARN_THROTTLE(1.0, "[FOLLOW] Running | path=%s | rpts=%d | degraded=%d | error=%.3f rad | v=%.3f m/s | L0=%d | L1=%d | Y0=%d | Y1=%d | lost_line_count=%d | zero_flag=%d",
                   pathToString(path_select).c_str(), rpts_num, is_degraded_mode,
-                  error, v,
+                  control_output.filtered_error, control_output.cmd.linear.x,
                   Lpt0_found, Lpt1_found, Ypt0_found, Ypt1_found,
                   zeroCount, zero_flag);
+ROS_WARN_THROTTLE(1.0, "[CONTROL] path=%s | rpts=%d | degraded=%d | raw_error=%.3f | filt_error=%.3f | target_v=%.3f | cmd_v=%.3f | cmd_wz=%.3f | lost=%d | coast=%d",
+                  pathToString(path_select).c_str(), rpts_num, is_degraded_mode,
+                  control_output.raw_error,
+                  control_output.filtered_error,
+                  control_output.target_v,
+                  control_output.cmd.linear.x,
+                  control_output.cmd.angular.z,
+                  control_output.lost,
+                  control_output.coasting);
 
     return 0;
 }

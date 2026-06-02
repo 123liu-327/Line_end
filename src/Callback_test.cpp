@@ -108,6 +108,7 @@ void refreshRuntimeParams() {
     int branch_lost_confirm_frames = follow_test::y_lost_confirm_frames;
     double branch_entry_min_odom = follow_test::y_entry_min_odom;
     double branch_entry_max_odom = follow_test::y_entry_max_odom;
+    follow_test::MotionControlConfig motion_config;
 
     private_nh.param<bool>("publish_debug_image", publish_debug, publish_debug);
     private_nh.param<bool>("show_window", show_debug_window, show_debug_window);
@@ -135,6 +136,31 @@ void refreshRuntimeParams() {
     private_nh.param<double>("y_entry_min_odom", branch_entry_min_odom, branch_entry_min_odom);
     private_nh.param<double>("y_entry_max_odom", branch_entry_max_odom, branch_entry_max_odom);
 
+    private_nh.param<int>("control_path_smooth_window", motion_config.path_smooth_window, motion_config.path_smooth_window);
+    private_nh.param<double>("control_path_ema_alpha", motion_config.path_ema_alpha, motion_config.path_ema_alpha);
+    private_nh.param<double>("control_error_filter_alpha", motion_config.error_filter_alpha, motion_config.error_filter_alpha);
+    private_nh.param<double>("control_yaw_deadband", motion_config.yaw_deadband, motion_config.yaw_deadband);
+    private_nh.param<double>("control_kp_yaw", motion_config.kp_yaw, motion_config.kp_yaw);
+    private_nh.param<double>("control_ki_yaw", motion_config.ki_yaw, motion_config.ki_yaw);
+    private_nh.param<double>("control_kd_yaw", motion_config.kd_yaw, motion_config.kd_yaw);
+    private_nh.param<double>("control_integral_limit", motion_config.integral_limit, motion_config.integral_limit);
+    private_nh.param<double>("control_integral_error_threshold", motion_config.integral_error_threshold, motion_config.integral_error_threshold);
+    private_nh.param<double>("control_adaptive_error_threshold", motion_config.adaptive_error_threshold, motion_config.adaptive_error_threshold);
+    private_nh.param<double>("control_adaptive_kp_scale", motion_config.adaptive_kp_scale, motion_config.adaptive_kp_scale);
+    private_nh.param<double>("control_adaptive_kd_scale", motion_config.adaptive_kd_scale, motion_config.adaptive_kd_scale);
+    private_nh.param<double>("control_max_wz", motion_config.max_wz, motion_config.max_wz);
+    private_nh.param<double>("control_soft_wz_limit", motion_config.soft_wz_limit, motion_config.soft_wz_limit);
+    private_nh.param<double>("control_max_wz_rate", motion_config.max_wz_rate, motion_config.max_wz_rate);
+    private_nh.param<double>("control_turn_slowdown", motion_config.turn_slowdown, motion_config.turn_slowdown);
+    private_nh.param<double>("control_slow_error", motion_config.slow_error, motion_config.slow_error);
+    private_nh.param<double>("control_min_speed", motion_config.min_speed, motion_config.min_speed);
+    private_nh.param<double>("control_degraded_speed_scale", motion_config.degraded_speed_scale, motion_config.degraded_speed_scale);
+    private_nh.param<double>("control_max_accel", motion_config.max_accel, motion_config.max_accel);
+    private_nh.param<double>("control_max_decel", motion_config.max_decel, motion_config.max_decel);
+    private_nh.param<double>("control_cmd_filter_alpha", motion_config.cmd_filter_alpha, motion_config.cmd_filter_alpha);
+    private_nh.param<double>("lost_line_coast_sec", motion_config.lost_line_coast_sec, motion_config.lost_line_coast_sec);
+    private_nh.param<double>("lost_line_coast_speed_scale", motion_config.lost_line_coast_speed_scale, motion_config.lost_line_coast_speed_scale);
+
     follow_test::configure(publish_debug, show_debug_window, enable_parking,
                            speed, distance, y_bias_m, enable_initial_turn,
                            turn_angle_deg, turn_angular_speed,
@@ -147,6 +173,7 @@ void refreshRuntimeParams() {
                            branch_approach_speed, branch_center_max_wz,
                            branch_lost_confirm_frames, branch_entry_min_odom,
                            branch_entry_max_odom);
+    follow_test::configureMotionController(motion_config);
 }
 
 void advertiseTopics(ros::NodeHandle &nh, const std::string &cmd_vel_topic,
