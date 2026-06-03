@@ -935,6 +935,44 @@ void publishDebugImage(const sensor_msgs::ImageConstPtr &source_msg) {
 
     cv::Mat debug_gray = convert2DArrayToMat(img_line_data);
 
+    auto drawPointLabel = [&](float pts[][2], int pts_num, int idx,
+                              const std::string &label, uint8_t gray,
+                              bool cross_marker) {
+        if (idx < 0 || idx >= pts_num) {
+            return;
+        }
+        const int x = clip(static_cast<int>(std::round(pts[idx][0])), 0, RESULT_COL - 1);
+        const int y = clip(static_cast<int>(std::round(pts[idx][1])), 0, RESULT_ROW - 1);
+        const cv::Point p(x, y);
+        const cv::Scalar color(gray);
+
+        if (cross_marker) {
+            cv::line(debug_gray, cv::Point(std::max(0, x - 6), y),
+                     cv::Point(std::min(RESULT_COL - 1, x + 6), y), color, 2);
+            cv::line(debug_gray, cv::Point(x, std::max(0, y - 6)),
+                     cv::Point(x, std::min(RESULT_ROW - 1, y + 6)), color, 2);
+        } else {
+            cv::circle(debug_gray, p, 6, color, 2);
+        }
+
+        cv::putText(debug_gray, label,
+                    cv::Point(std::min(RESULT_COL - 1, x + 8), std::max(12, y - 8)),
+                    cv::FONT_HERSHEY_SIMPLEX, 0.35, color, 1);
+    };
+
+    if (Lpt0_found) {
+        drawPointLabel(rpts0s, rpts0s_num, Lpt0_rpts0s_id, "L0", 255, false);
+    }
+    if (Lpt1_found) {
+        drawPointLabel(rpts1s, rpts1s_num, Lpt1_rpts1s_id, "L1", 220, false);
+    }
+    if (Ypt0_found) {
+        drawPointLabel(rpts0s, rpts0s_num, Ypt0_rpts0s_id, "Y0", 200, true);
+    }
+    if (Ypt1_found) {
+        drawPointLabel(rpts1s, rpts1s_num, Ypt1_rpts1s_id, "Y1", 180, true);
+    }
+
     if (publish_debug_image && debug_pub) {
         std_msgs::Header header;
         if (source_msg) {
