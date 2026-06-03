@@ -42,6 +42,9 @@
 
   <!-- 是否启用 L 型角点停车逻辑。 -->
   <arg name="parking_enabled" default="true" />
+  <arg name="parking_allow_either_l" default="true" />
+  <arg name="parking_extra_dist" default="0.215" />
+  <arg name="parking_forward_speed" default="0.15" />
 
   <!-- 是否发布调试图像 /flow_end/follow_test_debug，可用 rqt_image_view 查看。 -->
   <arg name="publish_debug_image" default="true" />
@@ -145,6 +148,9 @@
     <param name="right_time_local" value="$(arg right_time_local)" />
     <param name="middle_time_local" value="$(arg middle_time_local)" />
     <param name="parking_enabled" value="$(arg parking_enabled)" />
+    <param name="parking_allow_either_l" value="$(arg parking_allow_either_l)" />
+    <param name="parking_extra_dist" value="$(arg parking_extra_dist)" />
+    <param name="parking_forward_speed" value="$(arg parking_forward_speed)" />
     <param name="publish_debug_image" value="$(arg publish_debug_image)" />
     <param name="show_window" value="$(arg show_window)" />
     <param name="enable_video_record" value="$(arg enable_video_record)" />

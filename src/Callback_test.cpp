@@ -86,6 +86,9 @@ void refreshRuntimeParams() {
     bool publish_debug = follow_test::publish_debug_image;
     bool show_debug_window = follow_test::show_window;
     bool enable_parking = follow_test::parking_enabled;
+    bool allow_either_parking_l = follow_test::parking_allow_either_l;
+    double parking_extra_distance = follow_test::parking_extra_dist;
+    double parking_forward_velocity = follow_test::parking_forward_speed;
     double speed = follow_test::base_speed;
     double distance = follow_test::aim_distance;
     double y_bias_m = follow_test::aim_y_bias_m;
@@ -113,6 +116,9 @@ void refreshRuntimeParams() {
     private_nh.param<bool>("publish_debug_image", publish_debug, publish_debug);
     private_nh.param<bool>("show_window", show_debug_window, show_debug_window);
     private_nh.param<bool>("parking_enabled", enable_parking, enable_parking);
+    private_nh.param<bool>("parking_allow_either_l", allow_either_parking_l, allow_either_parking_l);
+    private_nh.param<double>("parking_extra_dist", parking_extra_distance, parking_extra_distance);
+    private_nh.param<double>("parking_forward_speed", parking_forward_velocity, parking_forward_velocity);
     private_nh.param<double>("base_speed", speed, speed);
     private_nh.param<double>("aim_distance", distance, distance);
     private_nh.param<double>("aim_y_bias_m", y_bias_m, y_bias_m);
@@ -172,7 +178,8 @@ void refreshRuntimeParams() {
                            branch_detect_confirm_frames, branch_center_aim_dist,
                            branch_approach_speed, branch_center_max_wz,
                            branch_lost_confirm_frames, branch_entry_min_odom,
-                           branch_entry_max_odom);
+                           branch_entry_max_odom, allow_either_parking_l,
+                           parking_extra_distance, parking_forward_velocity);
     follow_test::configureMotionController(motion_config);
 }
 

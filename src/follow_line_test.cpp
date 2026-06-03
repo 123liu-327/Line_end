@@ -155,6 +155,9 @@ int middle_path_num = 0;
 bool publish_debug_image = true;
 bool show_window = false;
 bool parking_enabled = true;
+bool parking_allow_either_l = true;
+double parking_extra_dist = 0.215;
+double parking_forward_speed = 0.15;
 double base_speed = 0.30;
 double aim_distance = 0.10;
 double aim_y_bias_m = 0.20;
@@ -191,12 +194,6 @@ bool y_turn_has_last_time = false;
 ros::Time y_approach_start_time;
 float y_approach_start_odom = 0.0f;
 ros::Time y_turn_pause_start;
-bool parking_first_corner_seen = false;
-bool parking_first_corner_released = false;
-float parking_first_corner_odom = 0.0f;
-PathSelect parking_first_corner_path = PathSelect::RIGHT;
-int parking_first_corner_id = -1;
-const float parking_second_corner_min_dist = 0.20f;
 FollowMotionController motion_controller;
 
 void configureMotionController(const MotionControlConfig &config) {
@@ -228,11 +225,8 @@ void publishStatus(const std::string &state);
 void publishDebugImage(const sensor_msgs::ImageConstPtr &source_msg = sensor_msgs::ImageConstPtr());
 
 void resetParkingCornerState() {
-    parking_first_corner_seen = false;
-    parking_first_corner_released = false;
-    parking_first_corner_odom = odom_dist;
-    parking_first_corner_path = path_select;
-    parking_first_corner_id = -1;
+    // Kept for state-transition call sites. The restored parking behavior no
+    // longer tracks a first/second square corner pair.
 }
 
 double normalizeAngleDeg(double angle) {
@@ -579,78 +573,64 @@ bool handleParkingCorner() {
     bool is_stop_corner = false;
     const char *parking_line_type = "None";
     int parking_corner_id = -1;
+    const int parking_min_corner_id = 1;
+    const float parking_shape_thresh_px = 15.0f;
+    const float parking_bottom_margin_px = 80.0f;
 
-    if (path_select == PathSelect::RIGHT &&
-        Lpt1_found && Lpt1_rpts1s_id >= 3 && Lpt1_rpts1s_id < rptsc1_num) {
+    auto tryRightParkingCorner = [&]() -> bool {
+        if (!Lpt1_found || Lpt1_rpts1s_id < parking_min_corner_id || Lpt1_rpts1s_id >= rptsc1_num) {
+            return false;
+        }
         // 右侧线 L 角点：角点前后点在图像中形成“向左折”的趋势，
         // 且角点位于图像下方，说明停车点已经接近车体。
         int im1 = clip(Lpt1_rpts1s_id - (int)round(angle_dist / sample_dist), 0, rptsc1_num - 1);
         int ip1 = clip(Lpt1_rpts1s_id + (int)round(angle_dist / sample_dist), 0, rptsc1_num - 1);
-        is_stop_corner = (rptsc1[im1][1] - rptsc1[Lpt1_rpts1s_id][1] > 20) &&
-                         (rptsc1[ip1][0] - rptsc1[Lpt1_rpts1s_id][0] < -20) &&
-                         (rptsc1[Lpt1_rpts1s_id][1] > RESULT_ROW - 40);
-        if (is_stop_corner) {
-            corner_move(rpts1s, corner_dot, Lpt1_rpts1s_id, -pixel_per_meter * ROAD_WIDTH / 2);
-            parking_line_type = "Right_L";
-            parking_corner_id = Lpt1_rpts1s_id;
+        const bool valid_corner = (rptsc1[im1][1] - rptsc1[Lpt1_rpts1s_id][1] > parking_shape_thresh_px) &&
+                                  (rptsc1[ip1][0] - rptsc1[Lpt1_rpts1s_id][0] < -parking_shape_thresh_px) &&
+                                  (rptsc1[Lpt1_rpts1s_id][1] > RESULT_ROW - parking_bottom_margin_px);
+        if (!valid_corner) {
+            return false;
         }
-    } else if (path_select == PathSelect::LEFT &&
-               Lpt0_found && Lpt0_rpts0s_id >= 3 && Lpt0_rpts0s_id < rptsc0_num) {
+        corner_move(rpts1s, corner_dot, Lpt1_rpts1s_id, -pixel_per_meter * ROAD_WIDTH / 2);
+        parking_line_type = "Right_L";
+        parking_corner_id = Lpt1_rpts1s_id;
+        return true;
+    };
+
+    auto tryLeftParkingCorner = [&]() -> bool {
+        if (!Lpt0_found || Lpt0_rpts0s_id < parking_min_corner_id || Lpt0_rpts0s_id >= rptsc0_num) {
+            return false;
+        }
         // 左侧线 L 角点：判断条件和右侧线对称，横向方向相反。
         int im0 = clip(Lpt0_rpts0s_id - (int)round(angle_dist / sample_dist), 0, rptsc0_num - 1);
         int ip0 = clip(Lpt0_rpts0s_id + (int)round(angle_dist / sample_dist), 0, rptsc0_num - 1);
-        is_stop_corner = (rptsc0[im0][1] - rptsc0[Lpt0_rpts0s_id][1] > 20) &&
-                         (rptsc0[ip0][0] - rptsc0[Lpt0_rpts0s_id][0] > 20) &&
-                         (rptsc0[Lpt0_rpts0s_id][1] > RESULT_ROW - 40);
-        if (is_stop_corner) {
-            corner_move(rpts0s, corner_dot, Lpt0_rpts0s_id, pixel_per_meter * ROAD_WIDTH / 2);
-            parking_line_type = "Left_L";
-            parking_corner_id = Lpt0_rpts0s_id;
+        const bool valid_corner = (rptsc0[im0][1] - rptsc0[Lpt0_rpts0s_id][1] > parking_shape_thresh_px) &&
+                                  (rptsc0[ip0][0] - rptsc0[Lpt0_rpts0s_id][0] > parking_shape_thresh_px) &&
+                                  (rptsc0[Lpt0_rpts0s_id][1] > RESULT_ROW - parking_bottom_margin_px);
+        if (!valid_corner) {
+            return false;
         }
+        corner_move(rpts0s, corner_dot, Lpt0_rpts0s_id, pixel_per_meter * ROAD_WIDTH / 2);
+        parking_line_type = "Left_L";
+        parking_corner_id = Lpt0_rpts0s_id;
+        return true;
+    };
+
+    if (parking_allow_either_l) {
+        is_stop_corner = tryRightParkingCorner() || tryLeftParkingCorner();
+    } else if (path_select == PathSelect::RIGHT) {
+        is_stop_corner = tryRightParkingCorner();
+    } else if (path_select == PathSelect::LEFT) {
+        is_stop_corner = tryLeftParkingCorner();
     }
 
     if (!is_stop_corner) {
-        if (parking_first_corner_seen && !parking_first_corner_released) {
-            parking_first_corner_released = true;
-            ROS_WARN("[PARKING] First square corner released | path=%s | first_id=%d | odom=%.3fm",
-                     pathToString(parking_first_corner_path).c_str(),
-                     parking_first_corner_id,
-                     odom_dist);
-        }
         // 周期性打印角点检测状态（即使未检测到停车点）
         ROS_WARN_THROTTLE(2.0, "[PARKING] CornerDetect | path=%s | L0=%d(id=%d) | L1=%d(id=%d) | Y0=%d(id=%d) | Y1=%d(id=%d) | left_pts=%d | right_pts=%d | parking_enable=%d",
                   pathToString(path_select).c_str(),
                   Lpt0_found, Lpt0_rpts0s_id, Lpt1_found, Lpt1_rpts1s_id,
                   Ypt0_found, Ypt0_rpts0s_id, Ypt1_found, Ypt1_rpts1s_id,
                   rptsc0_num, rptsc1_num, parking_enabled);
-        return false;
-    }
-
-    if (!parking_first_corner_seen || parking_first_corner_path != path_select) {
-        parking_first_corner_seen = true;
-        parking_first_corner_released = false;
-        parking_first_corner_odom = odom_dist;
-        parking_first_corner_path = path_select;
-        parking_first_corner_id = parking_corner_id;
-        ROS_WARN("[PARKING] First square corner ignored | path=%s | line_type=%s | corner_id=%d | odom=%.3fm",
-                 pathToString(path_select).c_str(),
-                 parking_line_type,
-                 parking_corner_id,
-                 odom_dist);
-        return false;
-    }
-
-    const float moved_after_first_corner = std::abs(odom_dist - parking_first_corner_odom);
-    if (!parking_first_corner_released || moved_after_first_corner < parking_second_corner_min_dist) {
-        ROS_WARN_THROTTLE(0.5,
-                          "[PARKING] Waiting second square corner | path=%s | line_type=%s | corner_id=%d | first_id=%d | released=%d | moved=%.3fm/%.3fm",
-                          pathToString(path_select).c_str(),
-                          parking_line_type,
-                          parking_corner_id,
-                          parking_first_corner_id,
-                          parking_first_corner_released,
-                          moved_after_first_corner,
-                          parking_second_corner_min_dist);
         return false;
     }
 
@@ -676,8 +656,7 @@ bool handleParkingCorner() {
     float last_print_dis = target_dis;  // 上次打印时的距离
     const float initial_target_dis = target_dis;
     const float parking_start_odom = odom_dist;
-    const float parking_extra_dist = 0.001f;
-    const float parking_total_dist = std::max(0.001f, std::abs(target_dis) + parking_extra_dist);
+    const float parking_total_dist = std::max(0.001f, std::abs(target_dis) + static_cast<float>(parking_extra_dist));
     float parking_moved_from_velocity = 0.0f;
     float previous_target_dis = target_dis;  // 上一次的目标距离
     ros::Rate parking_rate(30.0);
@@ -696,7 +675,7 @@ bool handleParkingCorner() {
         last_time = now;
         parking_loop_count++;
 
-        local_msg.linear.x = 0.20;
+        local_msg.linear.x = parking_forward_speed;
         local_msg.linear.y = 0.0;
         // 横向误差较大时增加 y 方向微调，让停车点尽量落到车体中心附近。
         if (std::abs(target_dis_x) >= 0.08) {
@@ -1115,7 +1094,8 @@ void configure(bool publish_debug, bool show_debug_window, bool enable_parking,
               y_turn_angular_speed, y_turn_pause_sec,
               y_detect_min_id, y_detect_max_id, y_detect_confirm_frames,
               y_center_aim_dist, y_approach_speed, y_center_max_wz,
-              y_lost_confirm_frames, y_entry_min_odom, y_entry_max_odom);
+              y_lost_confirm_frames, y_entry_min_odom, y_entry_max_odom,
+              parking_allow_either_l, parking_extra_dist, parking_forward_speed);
 }
 
 void configure(bool publish_debug, bool show_debug_window, bool enable_parking,
@@ -1129,11 +1109,15 @@ void configure(bool publish_debug, bool show_debug_window, bool enable_parking,
                int branch_detect_confirm_frames, double branch_center_aim_dist,
                double branch_approach_speed, double branch_center_max_wz,
                int branch_lost_confirm_frames, double branch_entry_min_odom,
-               double branch_entry_max_odom) {
+               double branch_entry_max_odom, bool allow_either_l,
+               double extra_dist, double forward_speed) {
     // 保存 launch 参数，供后续图像调试、停车开关和速度控制使用。
     publish_debug_image = publish_debug;
     show_window = show_debug_window;
     parking_enabled = enable_parking;
+    parking_allow_either_l = allow_either_l;
+    parking_extra_dist = std::max(0.0, extra_dist);
+    parking_forward_speed = std::max(0.01, forward_speed);
     base_speed = speed;
     aim_distance = distance;
     aim_y_bias_m = y_bias_m;
