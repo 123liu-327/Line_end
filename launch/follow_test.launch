@@ -32,7 +32,7 @@
   <arg name="left_dis_bias_left" default="6.0" />
   <arg name="left_dis_bias_right" default="0.0" />
   <arg name="right_dis_bias_left" default="0.0" />
-  <arg name="right_dis_bias_right" default="-30.0" />
+  <arg name="right_dis_bias_right" default="-32.0" />
   <arg name="middle_dis_bias_left" default="0.0" />
   <arg name="middle_dis_bias_right" default="0.0" />
   <arg name="time_local" default="0.5" />
@@ -43,7 +43,7 @@
   <!-- 是否启用 L 型角点停车逻辑。 -->
   <arg name="parking_enabled" default="true" />
   <arg name="parking_allow_either_l" default="true" />
-  <arg name="parking_extra_dist" default="0.215" />
+  <arg name="parking_extra_dist" default="0.315" />
   <arg name="parking_forward_speed" default="0.15" />
 
   <!-- 是否发布调试图像 /flow_end/follow_test_debug，可用 rqt_image_view 查看。 -->
@@ -72,14 +72,14 @@
   <arg name="y_turn_angle_deg" default="45.0" />
   <arg name="y_turn_angular_speed" default="0.35" />
   <arg name="y_turn_pause_sec" default="0.5" />
-  <arg name="y_detect_min_id" default="35" />
+  <arg name="y_detect_min_id" default="0" />
   <arg name="y_center_aim_dist" default="0.45" />
   <arg name="y_approach_speed" default="0.18" />
   <arg name="y_center_max_wz" default="0.25" />
   <arg name="y_lost_confirm_frames" default="3" />
   <arg name="y_entry_min_odom" default="0.08" />
   <arg name="y_entry_max_odom" default="0.45" />
-  <arg name="y_detect_max_id" default="80" />
+  <arg name="y_detect_max_id" default="100" />
   <arg name="y_detect_confirm_frames" default="2" />
   <arg name="y_crossbar_seek_speed" default="0.08" />
   <arg name="y_crossbar_lost_confirm_frames" default="3" />
@@ -87,7 +87,7 @@
   <arg name="y_crossbar_long_tolerance_m" default="0.10" />
   <arg name="y_crossbar_max_abs_lat_m" default="0.18" />
   <arg name="y_crossbar_confirm_frames" default="2" />
-  <arg name="y_crossbar_seek_max_odom" default="0.60" />
+  <arg name="y_crossbar_seek_max_odom" default="0.40" />
   <arg name="control_path_smooth_window" default="2" />
   <arg name="control_path_ema_alpha" default="0.35" />
   <arg name="control_error_filter_alpha" default="0.65" />

@@ -369,7 +369,7 @@ void detectCorners() {
         int im1 = clip(i - (int)round(angle_dist / sample_dist), 0, rpts0s_num - 1);
         int ip1 = clip(i + (int)round(angle_dist / sample_dist), 0, rpts0s_num - 1);
         float conf = fabs(rpts0a[i]) - (fabs(rpts0a[im1]) + fabs(rpts0a[ip1])) / 2;
-        if (!Ypt0_found && 30.0 / 180.0 * PI < conf && conf < 65.0 / 180.0 * PI && i < 0.8 / sample_dist) {
+        if (!Ypt0_found && 25.0 / 180.0 * PI < conf && conf < 65.0 / 180.0 * PI && i < 0.8 / sample_dist) {
             Ypt0_rpts0s_id = i;
             Ypt0_found = true;
         }
@@ -388,7 +388,7 @@ void detectCorners() {
         int im1 = clip(i - (int)round(angle_dist / sample_dist), 0, rpts1s_num - 1);
         int ip1 = clip(i + (int)round(angle_dist / sample_dist), 0, rpts1s_num - 1);
         float conf = fabs(rpts1a[i]) - (fabs(rpts1a[im1]) + fabs(rpts1a[ip1])) / 2;
-        if (!Ypt1_found && 30.0 / 180.0 * PI < conf && conf < 65.0 / 180.0 * PI && i < 0.8 / sample_dist) {
+        if (!Ypt1_found && 25.0 / 180.0 * PI < conf && conf < 65.0 / 180.0 * PI && i < 0.8 / sample_dist) {
             Ypt1_rpts1s_id = i;
             Ypt1_found = true;
         }
