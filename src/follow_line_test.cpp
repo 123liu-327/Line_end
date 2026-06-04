@@ -188,6 +188,17 @@ int y_entry_lost_count = 0;
 int y_detect_max_id = 80;
 int y_detect_confirm_frames = 2;
 int y_detect_confirm_count = 0;
+double y_crossbar_seek_speed = 0.08;
+int y_crossbar_lost_confirm_frames = 3;
+double y_crossbar_target_long_m = 0.25;
+double y_crossbar_long_tolerance_m = 0.10;
+double y_crossbar_max_abs_lat_m = 0.18;
+int y_crossbar_confirm_frames = 2;
+double y_crossbar_seek_max_odom = 0.60;
+int y_crossbar_lost_count = 0;
+int y_crossbar_confirm_count = 0;
+float y_crossbar_seek_start_odom = 0.0f;
+ros::Time y_crossbar_seek_start_time;
 double y_turn_integrated_angle_deg = 0.0;
 ros::Time y_turn_last_time;
 bool y_turn_has_last_time = false;
@@ -253,6 +264,8 @@ void startInitialTurnIfNeeded() {
         y_turn_has_last_time = false;
         y_detect_confirm_count = 0;
         y_entry_lost_count = 0;
+        y_crossbar_lost_count = 0;
+        y_crossbar_confirm_count = 0;
         resetParkingCornerState();
         pid.reset();
         publishStatus("Y_SEARCH_" + pathToString(pending_branch_path));
@@ -392,36 +405,41 @@ void detectCorners() {
 
 bool handleYBranchFlow() {
     if (motion_state == MotionState::FOLLOWING_STRAIGHT) {
-        const bool in_window_y0 = Ypt0_found &&
-                                  Ypt0_rpts0s_id >= y_detect_min_id &&
-                                  Ypt0_rpts0s_id <= y_detect_max_id;
-        const bool in_window_y1 = Ypt1_found &&
-                                  Ypt1_rpts1s_id >= y_detect_min_id &&
-                                  Ypt1_rpts1s_id <= y_detect_max_id;
-        if (in_window_y0 || in_window_y1) {
+        const bool y_seen = Ypt0_found || Ypt1_found;
+        const bool lost_all_lines = (rpts_num == 0 && rptsc0e_num == 0 && rptsc1e_num == 0);
+
+        if (y_seen) {
             y_detect_confirm_count++;
+            y_crossbar_lost_count = 0;
         } else {
             y_detect_confirm_count = 0;
+            if (lost_all_lines) {
+                y_crossbar_lost_count++;
+            } else {
+                y_crossbar_lost_count = 0;
+            }
         }
 
         ROS_WARN_THROTTLE(0.5,
-                          "[Y_BRANCH] Searching | next_path=%s | Y0=%d(id=%d) | Y1=%d(id=%d) | in_window=%d | confirm=%d/%d | id_range=%d~%d",
+                          "[Y_BRANCH] Searching | next_path=%s | Y0=%d(id=%d) | Y1=%d(id=%d) | y_seen=%d | y_confirm=%d/%d | lost=%d/%d | id_filter=off",
                           pathToString(pending_branch_path).c_str(),
                           Ypt0_found, Ypt0_rpts0s_id,
                           Ypt1_found, Ypt1_rpts1s_id,
-                          in_window_y0 || in_window_y1,
+                          y_seen,
                           y_detect_confirm_count,
                           y_detect_confirm_frames,
-                          y_detect_min_id,
-                          y_detect_max_id);
+                          y_crossbar_lost_count,
+                          y_crossbar_lost_confirm_frames);
 
         if (y_detect_confirm_count >= y_detect_confirm_frames) {
             motion_state = MotionState::Y_CENTER_APPROACH;
             y_approach_start_odom = odom_dist;
             y_approach_start_time = ros::Time::now();
             y_entry_lost_count = 0;
+            y_crossbar_lost_count = 0;
+            y_crossbar_confirm_count = 0;
             publishStatus("Y_CENTER_APPROACH_" + pathToString(pending_branch_path));
-            ROS_WARN("[Y_BRANCH] Center approach started | next_path=%s | Y0=%d(id=%d) | Y1=%d(id=%d) | confirm=%d/%d | odom=%.3fm",
+            ROS_WARN("[Y_BRANCH] Center approach started | next_path=%s | Y0=%d(id=%d) | Y1=%d(id=%d) | confirm=%d/%d | odom=%.3fm | id_filter=off",
                      pathToString(pending_branch_path).c_str(),
                      Ypt0_found, Ypt0_rpts0s_id,
                      Ypt1_found, Ypt1_rpts1s_id,
@@ -430,7 +448,85 @@ bool handleYBranchFlow() {
                      odom_dist);
             return true;
         }
+
+        if (y_crossbar_lost_count >= y_crossbar_lost_confirm_frames) {
+            resetMotionController();
+            motion_state = MotionState::Y_CROSSBAR_SEEK;
+            y_crossbar_seek_start_odom = odom_dist;
+            y_crossbar_seek_start_time = ros::Time::now();
+            y_crossbar_confirm_count = 0;
+            pid.reset();
+            publishStatus("Y_CROSSBAR_SEEK_" + pathToString(pending_branch_path));
+            ROS_WARN("[Y_BRANCH] Lost Y and lines, seeking crossbar | next_path=%s | lost=%d/%d | odom=%.3fm",
+                     pathToString(pending_branch_path).c_str(),
+                     y_crossbar_lost_count,
+                     y_crossbar_lost_confirm_frames,
+                     odom_dist);
+            return true;
+        }
         return false;
+    }
+
+    if (motion_state == MotionState::Y_CROSSBAR_SEEK) {
+        const float moved = std::abs(odom_dist - y_crossbar_seek_start_odom);
+        const bool found = detect_forward_crossbar();
+        const bool long_ok = found &&
+                             std::abs(forward_crossbar_result.long_m -
+                                      static_cast<float>(y_crossbar_target_long_m)) <=
+                                 static_cast<float>(y_crossbar_long_tolerance_m);
+        const bool lat_ok = found &&
+                            std::abs(forward_crossbar_result.lat_m) <=
+                                static_cast<float>(y_crossbar_max_abs_lat_m);
+
+        if (found && long_ok && lat_ok) {
+            y_crossbar_confirm_count++;
+        } else {
+            y_crossbar_confirm_count = 0;
+        }
+
+        const bool reached_by_crossbar = y_crossbar_confirm_count >= y_crossbar_confirm_frames;
+        const bool reached_by_max_odom = moved >= static_cast<float>(y_crossbar_seek_max_odom);
+        if (reached_by_crossbar || reached_by_max_odom) {
+            resetMotionController();
+            motion_state = pending_branch_path == PathSelect::LEFT ?
+                           MotionState::Y_ALIGNING_LEFT : MotionState::Y_ALIGNING_RIGHT;
+            y_turn_integrated_angle_deg = 0.0;
+            y_turn_last_time = ros::Time::now();
+            y_turn_has_last_time = true;
+            pid.reset();
+            publishStatus("Y_TURN_" + pathToString(pending_branch_path));
+            ROS_WARN("[Y_CROSSBAR] Trigger turn | reason=%s | next_path=%s | found=%d | center=(%d,%d) | long=%.3fm | lat=%.3fm | confirm=%d/%d | moved=%.3fm",
+                     reached_by_crossbar ? "crossbar" : "max_odom",
+                     pathToString(pending_branch_path).c_str(),
+                     found,
+                     forward_crossbar_result.center_x,
+                     forward_crossbar_result.center_y,
+                     forward_crossbar_result.long_m,
+                     forward_crossbar_result.lat_m,
+                     y_crossbar_confirm_count,
+                     y_crossbar_confirm_frames,
+                     moved);
+            return true;
+        }
+
+        geometry_msgs::Twist msg;
+        msg.linear.x = y_crossbar_seek_speed;
+        msg.angular.z = 0.0;
+        pub.publish(msg);
+        publishDebugImage();
+
+        ROS_WARN_THROTTLE(0.5,
+                          "[Y_CROSSBAR] Seeking | found=%d | center=(%d,%d) | long=%.3fm | lat=%.3fm | confirm=%d/%d | moved=%.3fm | v=%.2f",
+                          found,
+                          forward_crossbar_result.center_x,
+                          forward_crossbar_result.center_y,
+                          forward_crossbar_result.long_m,
+                          forward_crossbar_result.lat_m,
+                          y_crossbar_confirm_count,
+                          y_crossbar_confirm_frames,
+                          moved,
+                          msg.linear.x);
+        return true;
     }
 
     if (motion_state == MotionState::Y_CENTER_APPROACH) {
@@ -972,6 +1068,23 @@ void publishDebugImage(const sensor_msgs::ImageConstPtr &source_msg) {
     if (Ypt1_found) {
         drawPointLabel(rpts1s, rpts1s_num, Ypt1_rpts1s_id, "Y1", 180, true);
     }
+    if (forward_crossbar_result.found) {
+        const int x = clip(forward_crossbar_result.center_x, 0, RESULT_COL - 1);
+        const int y = clip(forward_crossbar_result.center_y, 0, RESULT_ROW - 1);
+        const int half_width = std::max(4, std::min(forward_crossbar_result.width_px / 2, RESULT_COL / 2));
+        const cv::Scalar color(240);
+        cv::line(debug_gray,
+                 cv::Point(std::max(0, x - half_width), y),
+                 cv::Point(std::min(RESULT_COL - 1, x + half_width), y),
+                 color, 2);
+        cv::line(debug_gray,
+                 cv::Point(x, std::max(0, y - 6)),
+                 cv::Point(x, std::min(RESULT_ROW - 1, y + 6)),
+                 color, 2);
+        cv::putText(debug_gray, "Y_BAR",
+                    cv::Point(std::min(RESULT_COL - 1, x + 8), std::max(12, y - 8)),
+                    cv::FONT_HERSHEY_SIMPLEX, 0.35, color, 1);
+    }
 
     if (publish_debug_image && debug_pub) {
         std_msgs::Header header;
@@ -1133,7 +1246,11 @@ void configure(bool publish_debug, bool show_debug_window, bool enable_parking,
               y_detect_min_id, y_detect_max_id, y_detect_confirm_frames,
               y_center_aim_dist, y_approach_speed, y_center_max_wz,
               y_lost_confirm_frames, y_entry_min_odom, y_entry_max_odom,
-              parking_allow_either_l, parking_extra_dist, parking_forward_speed);
+              parking_allow_either_l, parking_extra_dist, parking_forward_speed,
+              y_crossbar_seek_speed, y_crossbar_lost_confirm_frames,
+              y_crossbar_target_long_m, y_crossbar_long_tolerance_m,
+              y_crossbar_max_abs_lat_m, y_crossbar_confirm_frames,
+              y_crossbar_seek_max_odom);
 }
 
 void configure(bool publish_debug, bool show_debug_window, bool enable_parking,
@@ -1148,7 +1265,14 @@ void configure(bool publish_debug, bool show_debug_window, bool enable_parking,
                double branch_approach_speed, double branch_center_max_wz,
                int branch_lost_confirm_frames, double branch_entry_min_odom,
                double branch_entry_max_odom, bool allow_either_l,
-               double extra_dist, double forward_speed) {
+               double extra_dist, double forward_speed,
+               double branch_crossbar_seek_speed,
+               int branch_crossbar_lost_confirm_frames,
+               double branch_crossbar_target_long_m,
+               double branch_crossbar_long_tolerance_m,
+               double branch_crossbar_max_abs_lat_m,
+               int branch_crossbar_confirm_frames,
+               double branch_crossbar_seek_max_odom) {
     // 保存 launch 参数，供后续图像调试、停车开关和速度控制使用。
     publish_debug_image = publish_debug;
     show_window = show_debug_window;
@@ -1178,6 +1302,13 @@ void configure(bool publish_debug, bool show_debug_window, bool enable_parking,
     y_lost_confirm_frames = std::max(1, branch_lost_confirm_frames);
     y_entry_min_odom = std::max(0.0, branch_entry_min_odom);
     y_entry_max_odom = std::max(y_entry_min_odom, branch_entry_max_odom);
+    y_crossbar_seek_speed = std::max(0.0, branch_crossbar_seek_speed);
+    y_crossbar_lost_confirm_frames = std::max(1, branch_crossbar_lost_confirm_frames);
+    y_crossbar_target_long_m = std::max(0.0, branch_crossbar_target_long_m);
+    y_crossbar_long_tolerance_m = std::max(0.0, branch_crossbar_long_tolerance_m);
+    y_crossbar_max_abs_lat_m = std::max(0.0, branch_crossbar_max_abs_lat_m);
+    y_crossbar_confirm_frames = std::max(1, branch_crossbar_confirm_frames);
+    y_crossbar_seek_max_odom = std::max(0.0, branch_crossbar_seek_max_odom);
 }
 
 void configureVideo(bool enable_record, int fps, const std::string &save_path) {

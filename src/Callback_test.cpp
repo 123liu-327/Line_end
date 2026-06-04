@@ -111,6 +111,13 @@ void refreshRuntimeParams() {
     int branch_lost_confirm_frames = follow_test::y_lost_confirm_frames;
     double branch_entry_min_odom = follow_test::y_entry_min_odom;
     double branch_entry_max_odom = follow_test::y_entry_max_odom;
+    double branch_crossbar_seek_speed = follow_test::y_crossbar_seek_speed;
+    int branch_crossbar_lost_confirm_frames = follow_test::y_crossbar_lost_confirm_frames;
+    double branch_crossbar_target_long_m = follow_test::y_crossbar_target_long_m;
+    double branch_crossbar_long_tolerance_m = follow_test::y_crossbar_long_tolerance_m;
+    double branch_crossbar_max_abs_lat_m = follow_test::y_crossbar_max_abs_lat_m;
+    int branch_crossbar_confirm_frames = follow_test::y_crossbar_confirm_frames;
+    double branch_crossbar_seek_max_odom = follow_test::y_crossbar_seek_max_odom;
     follow_test::MotionControlConfig motion_config;
 
     private_nh.param<bool>("publish_debug_image", publish_debug, publish_debug);
@@ -141,6 +148,13 @@ void refreshRuntimeParams() {
     private_nh.param<int>("y_lost_confirm_frames", branch_lost_confirm_frames, branch_lost_confirm_frames);
     private_nh.param<double>("y_entry_min_odom", branch_entry_min_odom, branch_entry_min_odom);
     private_nh.param<double>("y_entry_max_odom", branch_entry_max_odom, branch_entry_max_odom);
+    private_nh.param<double>("y_crossbar_seek_speed", branch_crossbar_seek_speed, branch_crossbar_seek_speed);
+    private_nh.param<int>("y_crossbar_lost_confirm_frames", branch_crossbar_lost_confirm_frames, branch_crossbar_lost_confirm_frames);
+    private_nh.param<double>("y_crossbar_target_long_m", branch_crossbar_target_long_m, branch_crossbar_target_long_m);
+    private_nh.param<double>("y_crossbar_long_tolerance_m", branch_crossbar_long_tolerance_m, branch_crossbar_long_tolerance_m);
+    private_nh.param<double>("y_crossbar_max_abs_lat_m", branch_crossbar_max_abs_lat_m, branch_crossbar_max_abs_lat_m);
+    private_nh.param<int>("y_crossbar_confirm_frames", branch_crossbar_confirm_frames, branch_crossbar_confirm_frames);
+    private_nh.param<double>("y_crossbar_seek_max_odom", branch_crossbar_seek_max_odom, branch_crossbar_seek_max_odom);
 
     private_nh.param<int>("control_path_smooth_window", motion_config.path_smooth_window, motion_config.path_smooth_window);
     private_nh.param<double>("control_path_ema_alpha", motion_config.path_ema_alpha, motion_config.path_ema_alpha);
@@ -179,7 +193,14 @@ void refreshRuntimeParams() {
                            branch_approach_speed, branch_center_max_wz,
                            branch_lost_confirm_frames, branch_entry_min_odom,
                            branch_entry_max_odom, allow_either_parking_l,
-                           parking_extra_distance, parking_forward_velocity);
+                           parking_extra_distance, parking_forward_velocity,
+                           branch_crossbar_seek_speed,
+                           branch_crossbar_lost_confirm_frames,
+                           branch_crossbar_target_long_m,
+                           branch_crossbar_long_tolerance_m,
+                           branch_crossbar_max_abs_lat_m,
+                           branch_crossbar_confirm_frames,
+                           branch_crossbar_seek_max_odom);
     follow_test::configureMotionController(motion_config);
 }
 

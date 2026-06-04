@@ -81,6 +81,13 @@
   <arg name="y_entry_max_odom" default="0.45" />
   <arg name="y_detect_max_id" default="80" />
   <arg name="y_detect_confirm_frames" default="2" />
+  <arg name="y_crossbar_seek_speed" default="0.08" />
+  <arg name="y_crossbar_lost_confirm_frames" default="3" />
+  <arg name="y_crossbar_target_long_m" default="0.25" />
+  <arg name="y_crossbar_long_tolerance_m" default="0.10" />
+  <arg name="y_crossbar_max_abs_lat_m" default="0.18" />
+  <arg name="y_crossbar_confirm_frames" default="2" />
+  <arg name="y_crossbar_seek_max_odom" default="0.60" />
   <arg name="control_path_smooth_window" default="2" />
   <arg name="control_path_ema_alpha" default="0.35" />
   <arg name="control_error_filter_alpha" default="0.65" />
@@ -178,6 +185,13 @@
     <param name="y_entry_max_odom" value="$(arg y_entry_max_odom)" />
     <param name="y_detect_max_id" value="$(arg y_detect_max_id)" />
     <param name="y_detect_confirm_frames" value="$(arg y_detect_confirm_frames)" />
+    <param name="y_crossbar_seek_speed" value="$(arg y_crossbar_seek_speed)" />
+    <param name="y_crossbar_lost_confirm_frames" value="$(arg y_crossbar_lost_confirm_frames)" />
+    <param name="y_crossbar_target_long_m" value="$(arg y_crossbar_target_long_m)" />
+    <param name="y_crossbar_long_tolerance_m" value="$(arg y_crossbar_long_tolerance_m)" />
+    <param name="y_crossbar_max_abs_lat_m" value="$(arg y_crossbar_max_abs_lat_m)" />
+    <param name="y_crossbar_confirm_frames" value="$(arg y_crossbar_confirm_frames)" />
+    <param name="y_crossbar_seek_max_odom" value="$(arg y_crossbar_seek_max_odom)" />
     <param name="control_path_smooth_window" value="$(arg control_path_smooth_window)" />
     <param name="control_path_ema_alpha" value="$(arg control_path_ema_alpha)" />
     <param name="control_error_filter_alpha" value="$(arg control_error_filter_alpha)" />
