@@ -161,19 +161,33 @@ bool detect_forward_crossbar()
     const int roi_y_max = clip(static_cast<int>(RESULT_ROW * 0.75f), 0, RESULT_ROW - 1);
     const int min_width_px = std::max(8, static_cast<int>(std::round(0.25f * pixel_per_meter)));
     const int center_tolerance_px = std::max(4, static_cast<int>(std::round(0.12f * pixel_per_meter)));
+    const int line_threshold = 128;
 
     int best_left = 0;
     int best_right = 0;
     int best_y = 0;
     int best_width = 0;
     int best_center_error = RESULT_COL;
+    int longest_left = 0;
+    int longest_right = 0;
+    int longest_y = 0;
+    int longest_width = 0;
+    int longest_center_error = RESULT_COL;
+    int line_pixel_count = 0;
 
     for (int y = roi_y_min; y <= roi_y_max; ++y) {
         int run_start = -1;
         for (int x = roi_x_min; x <= roi_x_max + 1; ++x) {
             const bool in_roi = x <= roi_x_max;
+            /*
             // ImageUsed 是当前巡线使用的二值/逆透视图；亮像素视为候选线像素。
             const bool is_line_pixel = in_roi && ImageUsed[y][x] > 128;
+
+            */
+            const bool is_line_pixel = in_roi && ImageUsed[y][x] < line_threshold;
+            if (is_line_pixel) {
+                line_pixel_count++;
+            }
 
             if (is_line_pixel && run_start < 0) {
                 run_start = x;
@@ -184,6 +198,15 @@ bool detect_forward_crossbar()
                 const int width = run_end - run_start + 1;
                 const int center_x = (run_start + run_end) / 2;
                 const int center_error = std::abs(center_x - image_center_x);
+
+                if (width > longest_width ||
+                    (width == longest_width && center_error < longest_center_error)) {
+                    longest_left = run_start;
+                    longest_right = run_end;
+                    longest_y = y;
+                    longest_width = width;
+                    longest_center_error = center_error;
+                }
 
                 if (width >= min_width_px && center_error <= center_tolerance_px) {
                     // 优先选择更宽的横线；宽度相同时选更靠近车体中心的线段。
@@ -205,6 +228,17 @@ bool detect_forward_crossbar()
     }
 
     if (best_width <= 0) {
+        const int longest_center_x = (longest_left + longest_right) / 2;
+        ROS_WARN_THROTTLE(0.5,
+                          "[Y_CROSSBAR_DEBUG] not_found | dark_px=%d | longest_width=%d/%d | longest_center=(%d,%d) | center_error=%d/%d | roi_x=%d~%d | roi_y=%d~%d | dark_thresh<%d | ppm=%.1f",
+                          line_pixel_count,
+                          longest_width, min_width_px,
+                          longest_center_x, longest_y,
+                          longest_center_error, center_tolerance_px,
+                          roi_x_min, roi_x_max,
+                          roi_y_min, roi_y_max,
+                          line_threshold,
+                          pixel_per_meter);
         return false;
     }
 
@@ -225,6 +259,18 @@ bool detect_forward_crossbar()
     forward_crossbar_result.map_y = map_y;
     forward_crossbar_result.long_m = -(map_y - ref_y) / pixel_per_meter;
     forward_crossbar_result.lat_m = -(map_x - ref_x) / pixel_per_meter;
+
+    ROS_WARN_THROTTLE(0.5,
+                      "[Y_CROSSBAR_DEBUG] found | center=(%d,%d) | width=%d/%d | center_error=%d/%d | map=(%.1f,%.1f) | long=%.3fm | lat=%.3fm | dark_px=%d | dark_thresh<%d",
+                      center_x, center_y,
+                      best_width, min_width_px,
+                      best_center_error, center_tolerance_px,
+                      forward_crossbar_result.map_x,
+                      forward_crossbar_result.map_y,
+                      forward_crossbar_result.long_m,
+                      forward_crossbar_result.lat_m,
+                      line_pixel_count,
+                      line_threshold);
 
     return true;
 }
