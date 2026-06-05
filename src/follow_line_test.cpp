@@ -266,6 +266,7 @@ void startInitialTurnIfNeeded() {
         y_entry_lost_count = 0;
         y_crossbar_lost_count = 0;
         y_crossbar_confirm_count = 0;
+        forward_crossbar_result.found = false;
         resetParkingCornerState();
         pid.reset();
         publishStatus("Y_SEARCH_" + pathToString(pending_branch_path));
@@ -506,6 +507,7 @@ bool handleYBranchFlow() {
                      y_crossbar_confirm_count,
                      y_crossbar_confirm_frames,
                      moved);
+            forward_crossbar_result.found = false;
             return true;
         }
 
@@ -1068,7 +1070,7 @@ void publishDebugImage(const sensor_msgs::ImageConstPtr &source_msg) {
     if (Ypt1_found) {
         drawPointLabel(rpts1s, rpts1s_num, Ypt1_rpts1s_id, "Y1", 180, true);
     }
-    if (forward_crossbar_result.found) {
+    if (motion_state == MotionState::Y_CROSSBAR_SEEK && forward_crossbar_result.found) {
         const int x = clip(forward_crossbar_result.center_x, 0, RESULT_COL - 1);
         const int y = clip(forward_crossbar_result.center_y, 0, RESULT_ROW - 1);
         const int half_width = std::max(4, std::min(forward_crossbar_result.width_px / 2, RESULT_COL / 2));
