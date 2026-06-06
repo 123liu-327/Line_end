@@ -78,7 +78,7 @@
   <arg name="y_center_max_wz" default="0.25" />
   <arg name="y_lost_confirm_frames" default="3" />
   <arg name="y_entry_min_odom" default="0.08" />
-  <arg name="y_entry_max_odom" default="0.45" />
+  <arg name="y_entry_max_odom" default="0.60" />
   <arg name="y_detect_max_id" default="100" />
   <arg name="y_detect_confirm_frames" default="2" />
   <arg name="y_crossbar_seek_speed" default="0.08" />
