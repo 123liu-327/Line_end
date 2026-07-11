@@ -20,6 +20,10 @@ find_package(OpenCV REQUIRED)
 
 catkin_package()
 
+install(DIRECTORY launch/
+  DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/launch
+)
+
 include_directories(
   include
   include/flow_test
@@ -79,7 +83,6 @@ add_executable(follow_test
   src/follow_test.cpp
   src/Callback_test.cpp
   src/follow_line_test.cpp
-  src/follow_motion_controller.cpp
   src/PID.cpp
   src/corner_move.cpp
   src/Findline_Adaptive.cpp
@@ -93,8 +96,4 @@ add_executable(follow_test
 target_link_libraries(follow_test
   ${catkin_LIBRARIES}
   ${OpenCV_LIBRARIES}
-)
-
-install(DIRECTORY launch/
-  DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/launch
 )
