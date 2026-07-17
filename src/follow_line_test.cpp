@@ -1,7 +1,6 @@
 #include <flow_end/follow.h>
 #include <flow_end/follow_line_test.h>
 #include <flow_end/follow_motion_controller.h>
-#include <flow_end/DebugVisionOverlay.h>
 #include <flow_end/ImagePerspectiveInit.h>
 #include <flow_end/MatTransform.h>
 #include <flow_end/process_image.h>
@@ -1168,49 +1167,73 @@ bool handleLostCornerSearch() {
 }
 
 void publishDebugImage(const sensor_msgs::ImageConstPtr &source_msg) {
-    // 调试图像底图来自真实 IPM 鸟瞰图，彩色叠加边线、控制路径和角点。
+    // 恢复历史 MONO8 调试图：ImageUsed 为底图，不再转换为 BGR 彩色图。
+    // 灰度值约定：0=左目标线，80=右目标线，160=当前控制路径。
     for (int i = 0; i < RESULT_ROW; ++i) {
         for (int j = 0; j < RESULT_COL; ++j) {
-            // process_image() 使用反色图；这里只反转显示值，恢复真实灰度鸟瞰底图。
-            img_line_data[i][j] = 255 - ImageUsed[i][j];
+            img_line_data[i][j] = ImageUsed[i][j];
         }
     }
-    cv::Mat bird_gray = convert2DArrayToMat(img_line_data);
-    cv::Mat debug_bgr;
-    cv::cvtColor(bird_gray, debug_bgr, cv::COLOR_GRAY2BGR);
+    for (int i = 0; i < rptsc0e_num; ++i) {
+        AT_IMAGE(&img_line,
+                 clip(static_cast<int>(rptsc0e[i][0]), 0, img_line.width - 1),
+                 clip(static_cast<int>(rptsc0e[i][1]), 0, img_line.height - 1)) = 0;
+    }
+    for (int i = 0; i < rptsc1e_num; ++i) {
+        AT_IMAGE(&img_line,
+                 clip(static_cast<int>(rptsc1e[i][0]), 0, img_line.width - 1),
+                 clip(static_cast<int>(rptsc1e[i][1]), 0, img_line.height - 1)) = 80;
+    }
+    for (int i = 0; i < rpts_num; ++i) {
+        AT_IMAGE(&img_line,
+                 clip(static_cast<int>(rpts[i][0]), 0, img_line.width - 1),
+                 clip(static_cast<int>(rpts[i][1]), 0, img_line.height - 1)) = 160;
+    }
 
-    using namespace flow_end::debug_overlay;
-    const std::string pixel_stats =
-        lanePixelStatsLine(bird_gray, rpts0s, rpts0s_num, rpts1s, rpts1s_num);
-    drawPointSeries(debug_bgr, rpts0s, rpts0s_num, cv::Scalar(40, 230, 40), 2);
-    drawPointSeries(debug_bgr, rpts1s, rpts1s_num, cv::Scalar(230, 40, 230), 2);
-    drawPointSeries(debug_bgr, rptsc0e, rptsc0e_num, cv::Scalar(0, 220, 255), 1, 2);
-    drawPointSeries(debug_bgr, rptsc1e, rptsc1e_num, cv::Scalar(255, 220, 0), 1, 2);
-    drawPointSeries(debug_bgr, rpts, rpts_num, cv::Scalar(255, 255, 255), 2, 2);
+    cv::Mat debug_gray = convert2DArrayToMat(img_line_data);
+
+    auto drawPointLabel = [&](float pts[][2], int pts_num, int idx,
+                              const std::string &label, uint8_t gray,
+                              bool cross_marker) {
+        if (idx < 0 || idx >= pts_num) {
+            return;
+        }
+        const int x = clip(static_cast<int>(std::round(pts[idx][0])),
+                           0, RESULT_COL - 1);
+        const int y = clip(static_cast<int>(std::round(pts[idx][1])),
+                           0, RESULT_ROW - 1);
+        const cv::Point point(x, y);
+        const cv::Scalar color(gray);
+
+        if (cross_marker) {
+            cv::line(debug_gray, cv::Point(std::max(0, x - 6), y),
+                     cv::Point(std::min(RESULT_COL - 1, x + 6), y), color, 2);
+            cv::line(debug_gray, cv::Point(x, std::max(0, y - 6)),
+                     cv::Point(x, std::min(RESULT_ROW - 1, y + 6)), color, 2);
+        } else {
+            cv::circle(debug_gray, point, 6, color, 2);
+        }
+        cv::putText(debug_gray, label,
+                    cv::Point(std::min(RESULT_COL - 1, x + 8),
+                              std::max(12, y - 8)),
+                    cv::FONT_HERSHEY_SIMPLEX, 0.35, color, 1);
+    };
 
     if (Lpt0_found) {
-        drawCornerMarker(debug_bgr, rpts0s, rpts0s_num, Lpt0_rpts0s_id,
-                         "L0", cv::Scalar(0, 80, 255), false,
-                         cornerConfidenceDeg(rpts0a, rpts0s_num, Lpt0_rpts0s_id,
-                                             angle_dist, sample_dist));
+        drawPointLabel(rpts0s, rpts0s_num, Lpt0_rpts0s_id,
+                       "L0", 255, false);
     }
     if (Lpt1_found) {
-        drawCornerMarker(debug_bgr, rpts1s, rpts1s_num, Lpt1_rpts1s_id,
-                         "L1", cv::Scalar(255, 80, 30), false,
-                         cornerConfidenceDeg(rpts1a, rpts1s_num, Lpt1_rpts1s_id,
-                                             angle_dist, sample_dist));
+        drawPointLabel(rpts1s, rpts1s_num, Lpt1_rpts1s_id,
+                       "L1", 220, false);
     }
     if (Ypt0_found) {
-        drawCornerMarker(debug_bgr, rpts0s, rpts0s_num, Ypt0_rpts0s_id,
-                         "Y0", cv::Scalar(0, 255, 255), true,
-                         cornerConfidenceDeg(rpts0a, rpts0s_num, Ypt0_rpts0s_id,
-                                             angle_dist, sample_dist));
+        drawPointLabel(rpts0s, rpts0s_num, Ypt0_rpts0s_id,
+                       "Y0", 200, true);
     }
     if (Ypt1_found) {
-        drawCornerMarker(debug_bgr, rpts1s, rpts1s_num, Ypt1_rpts1s_id,
-                         "Y1", cv::Scalar(255, 255, 0), true,
-                         cornerConfidenceDeg(rpts1a, rpts1s_num, Ypt1_rpts1s_id,
-                                             angle_dist, sample_dist));
+        drawPointLabel(rpts1s, rpts1s_num, Ypt1_rpts1s_id,
+                       "Y1", 180, true);
     }
 
     if (motion_state == MotionState::Y_CROSSBAR_SEEK &&
@@ -1221,76 +1244,25 @@ void publishDebugImage(const sensor_msgs::ImageConstPtr &source_msg) {
         const int crossbar_y = clip(
             static_cast<int>(std::round(forward_crossbar_result.map_y)),
             0, RESULT_ROW - 1);
-        cv::drawMarker(debug_bgr, cv::Point(crossbar_x, crossbar_y),
-                       cv::Scalar(0, 0, 255), cv::MARKER_CROSS, 18, 2);
-        cv::putText(debug_bgr, "CROSSBAR",
+        cv::drawMarker(debug_gray, cv::Point(crossbar_x, crossbar_y),
+                       cv::Scalar(240), cv::MARKER_CROSS, 18, 2);
+        cv::putText(debug_gray, "Y_BAR",
                     cv::Point(std::min(RESULT_COL - 90, crossbar_x + 8),
                               std::max(18, crossbar_y - 8)),
-                    cv::FONT_HERSHEY_SIMPLEX, 0.42,
-                    cv::Scalar(0, 0, 255), 1, cv::LINE_AA);
+                    cv::FONT_HERSHEY_SIMPLEX, 0.35,
+                    cv::Scalar(240), 1, cv::LINE_AA);
     }
 
-    const CornerCandidate candidate0 = strongestCandidate(
-        rpts0a, rpts0an, rpts0s_num, angle_dist, sample_dist);
-    const CornerCandidate candidate1 = strongestCandidate(
-        rpts1a, rpts1an, rpts1s_num, angle_dist, sample_dist);
-    if (!Lpt0_found && !Ypt0_found) {
-        drawCandidateMarker(debug_bgr, rpts0s, rpts0s_num, candidate0,
-                            "C0", cv::Scalar(190, 190, 190));
-    }
-    if (!Lpt1_found && !Ypt1_found) {
-        drawCandidateMarker(debug_bgr, rpts1s, rpts1s_num, candidate1,
-                            "C1", cv::Scalar(150, 150, 150));
-    }
     std::ostringstream state_line;
-    state_line << "IPM BIRD | path=" << pathToString(path_select)
-               << " state=" << motionStateToString(motion_state)
-               << " degraded=" << is_degraded_mode << " run=" << run_car;
+    state_line << "path=" << pathToString(path_select)
+               << " state=" << motionStateToString(motion_state);
     if (y_branch_mode_requested) {
         state_line << " next=" << pathToString(pending_branch_path);
     }
-    std::ostringstream counts;
-    counts << "input L/R=" << ipts0_num << "/" << ipts1_num
-           << " mapped=" << rpts0_num << "/" << rpts1_num
-           << " sampled=" << rpts0s_num << "/" << rpts1s_num
-           << " target=" << rptsc0e_num << "/" << rptsc1e_num
-           << " selected=" << rpts_num;
-    std::ostringstream candidates;
-    candidates << "best C0=";
-    if (candidate0.valid) {
-        candidates << candidate0.index << ":" << std::fixed << std::setprecision(1)
-                   << candidate0.confidence_deg << "deg";
-    } else {
-        candidates << "none";
-    }
-    candidates << " | C1=";
-    if (candidate1.valid) {
-        candidates << candidate1.index << ":" << std::fixed << std::setprecision(1)
-                   << candidate1.confidence_deg << "deg";
-    } else {
-        candidates << "none";
-    }
-    std::ostringstream control;
-    control << "bias L/R=" << std::fixed << std::setprecision(1)
-            << Dis_Bias_Left << "/" << Dis_Bias_Right
-            << " cmd v/w=" << std::setprecision(2)
-            << current_linear_velocity_x << "/" << current_angular_velocity_z;
-    drawStatusPanel(debug_bgr, {
-        state_line.str(),
-        counts.str(),
-        cornerStatus("L0", Lpt0_found, Lpt0_rpts0s_id, rpts0s, rpts0s_num,
-                     rpts0a, angle_dist, sample_dist) + " | " +
-            cornerStatus("L1", Lpt1_found, Lpt1_rpts1s_id, rpts1s, rpts1s_num,
-                         rpts1a, angle_dist, sample_dist),
-        cornerStatus("Y0", Ypt0_found, Ypt0_rpts0s_id, rpts0s, rpts0s_num,
-                     rpts0a, angle_dist, sample_dist) + " | " +
-            cornerStatus("Y1", Ypt1_found, Ypt1_rpts1s_id, rpts1s, rpts1s_num,
-                         rpts1a, angle_dist, sample_dist),
-        pixel_stats,
-        candidates.str(),
-        control.str(),
-        "THRESH Y=25..65deg L=70..110deg range<0.8m | L=circle Y=X C=diamond"
-    });
+    cv::putText(debug_gray, state_line.str(), cv::Point(8, 18),
+                cv::FONT_HERSHEY_SIMPLEX, 0.45, cv::Scalar(0), 3, cv::LINE_AA);
+    cv::putText(debug_gray, state_line.str(), cv::Point(8, 18),
+                cv::FONT_HERSHEY_SIMPLEX, 0.45, cv::Scalar(240), 1, cv::LINE_AA);
 
     if (publish_debug_image && debug_pub) {
         std_msgs::Header header;
@@ -1298,13 +1270,13 @@ void publishDebugImage(const sensor_msgs::ImageConstPtr &source_msg) {
             header = source_msg->header;
         }
         sensor_msgs::ImagePtr msg = cv_bridge::CvImage(
-            header, sensor_msgs::image_encodings::BGR8, debug_bgr).toImageMsg();
+            header, sensor_msgs::image_encodings::MONO8, debug_gray).toImageMsg();
         debug_pub.publish(msg);
     }
 
     // 显示窗口（如果启用）
     if (show_window) {
-        cv::imshow("follow_test", debug_bgr);
+        cv::imshow("follow_test", debug_gray);
         cv::waitKey(1);
     }
 
@@ -1326,7 +1298,7 @@ void publishDebugImage(const sensor_msgs::ImageConstPtr &source_msg) {
                 cv::VideoWriter::fourcc('M', 'J', 'P', 'G'),
                 video_fps,
                 cv::Size(RESULT_COL, RESULT_ROW),
-                true
+                false
             );
 
             if (debug_video_writer.isOpened()) {
@@ -1339,7 +1311,7 @@ void publishDebugImage(const sensor_msgs::ImageConstPtr &source_msg) {
 
         // 写入当前帧
         if (video_recording && debug_video_writer.isOpened()) {
-            debug_video_writer.write(debug_bgr);
+            debug_video_writer.write(debug_gray);
         }
     }
 }
