@@ -25,6 +25,7 @@ extern int middle_path_num;
 extern bool publish_debug_image;
 extern bool show_window;
 extern bool parking_enabled;
+extern bool parking_allow_either_l;
 extern double base_speed;
 extern double aim_distance;
 extern double aim_y_bias_m;
@@ -38,6 +39,10 @@ extern ros::Time initial_turn_last_time;
 extern bool initial_turn_has_last_time;
 extern double min_pid_speed;
 extern ros::Time initial_turn_pause_start;
+extern bool lost_corner_search_enabled;
+extern double lost_corner_search_timeout;
+extern double lost_corner_search_angular_speed;
+extern double lost_corner_search_linear_speed;
 
 // 视频保存相关配置
 extern bool enable_video_record;
@@ -52,7 +57,10 @@ void configure(bool publish_debug, bool show_debug_window, bool enable_parking,
                double speed, double distance, double y_bias_m,
                bool enable_initial_turn, double initial_turn_angle_deg,
                double initial_turn_angular_speed, int initial_turn_rpts_threshold,
-               double initial_turn_pause_sec, double min_pid_speed);
+               double initial_turn_pause_sec, double min_pid_speed,
+               bool allow_either_l, bool enable_lost_corner_search,
+               double lost_corner_timeout, double lost_corner_angular_speed,
+               double lost_corner_linear_speed);
 
 void configureVideo(bool enable_record, int fps, const std::string &save_path);
 

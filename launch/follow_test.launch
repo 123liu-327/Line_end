@@ -112,6 +112,10 @@
   <arg name="control_cmd_filter_alpha" default="0.45" />
   <arg name="lost_line_coast_sec" default="0.15" />
   <arg name="lost_line_coast_speed_scale" default="0.60" />
+  <arg name="lost_corner_search_enabled" default="true" />
+  <arg name="lost_corner_search_timeout" default="0.6" />
+  <arg name="lost_corner_search_angular_speed" default="0.25" />
+  <arg name="lost_corner_search_linear_speed" default="0.0" />
 
   <!-- 是否启用起步预转角。Left/Right 会先原地转向目标岔路，Middle 不预转。 -->
   <arg name="initial_turn_enabled" default="true" />
@@ -216,5 +220,9 @@
     <param name="control_cmd_filter_alpha" value="$(arg control_cmd_filter_alpha)" />
     <param name="lost_line_coast_sec" value="$(arg lost_line_coast_sec)" />
     <param name="lost_line_coast_speed_scale" value="$(arg lost_line_coast_speed_scale)" />
+    <param name="lost_corner_search_enabled" value="$(arg lost_corner_search_enabled)" />
+    <param name="lost_corner_search_timeout" value="$(arg lost_corner_search_timeout)" />
+    <param name="lost_corner_search_angular_speed" value="$(arg lost_corner_search_angular_speed)" />
+    <param name="lost_corner_search_linear_speed" value="$(arg lost_corner_search_linear_speed)" />
   </node>
 </launch>

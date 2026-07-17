@@ -86,6 +86,7 @@ void refreshRuntimeParams() {
     bool publish_debug = follow_test::publish_debug_image;
     bool show_debug_window = follow_test::show_window;
     bool enable_parking = follow_test::parking_enabled;
+    bool allow_either_l = follow_test::parking_allow_either_l;
     double speed = follow_test::base_speed;
     double distance = follow_test::aim_distance;
     double y_bias_m = follow_test::aim_y_bias_m;
@@ -95,10 +96,15 @@ void refreshRuntimeParams() {
     int turn_rpts_threshold = follow_test::initial_turn_rpts_threshold;
     double turn_pause_sec = follow_test::initial_turn_pause_sec;
     double min_turn_pid_speed = follow_test::min_pid_speed;
+    bool enable_lost_corner_search = follow_test::lost_corner_search_enabled;
+    double lost_corner_timeout = follow_test::lost_corner_search_timeout;
+    double lost_corner_angular_speed = follow_test::lost_corner_search_angular_speed;
+    double lost_corner_linear_speed = follow_test::lost_corner_search_linear_speed;
 
     private_nh.param<bool>("publish_debug_image", publish_debug, publish_debug);
     private_nh.param<bool>("show_window", show_debug_window, show_debug_window);
     private_nh.param<bool>("parking_enabled", enable_parking, enable_parking);
+    private_nh.param<bool>("parking_allow_either_l", allow_either_l, allow_either_l);
     private_nh.param<double>("base_speed", speed, speed);
     private_nh.param<double>("aim_distance", distance, distance);
     private_nh.param<double>("aim_y_bias_m", y_bias_m, y_bias_m);
@@ -108,12 +114,18 @@ void refreshRuntimeParams() {
     private_nh.param<int>("initial_turn_rpts_threshold", turn_rpts_threshold, turn_rpts_threshold);
     private_nh.param<double>("initial_turn_pause_sec", turn_pause_sec, turn_pause_sec);
     private_nh.param<double>("min_pid_speed", min_turn_pid_speed, min_turn_pid_speed);
+    private_nh.param<bool>("lost_corner_search_enabled", enable_lost_corner_search, enable_lost_corner_search);
+    private_nh.param<double>("lost_corner_search_timeout", lost_corner_timeout, lost_corner_timeout);
+    private_nh.param<double>("lost_corner_search_angular_speed", lost_corner_angular_speed, lost_corner_angular_speed);
+    private_nh.param<double>("lost_corner_search_linear_speed", lost_corner_linear_speed, lost_corner_linear_speed);
 
     follow_test::configure(publish_debug, show_debug_window, enable_parking,
                            speed, distance, y_bias_m, enable_initial_turn,
                            turn_angle_deg, turn_angular_speed,
                            turn_rpts_threshold, turn_pause_sec,
-                           min_turn_pid_speed);
+                           min_turn_pid_speed, allow_either_l,
+                           enable_lost_corner_search, lost_corner_timeout,
+                           lost_corner_angular_speed, lost_corner_linear_speed);
 }
 
 void advertiseTopics(ros::NodeHandle &nh, const std::string &cmd_vel_topic,
@@ -202,12 +214,14 @@ void beginCallback(const std_msgs::String::ConstPtr &msg) {
     follow_test::startInitialTurnIfNeeded();
     
     // 启动调试信息
-    ROS_WARN("[CMD] StartFollow | path=%s | bias_left=%.1f | bias_right=%.1f | Time_local=%.2f | init_turn=%d | parking=%d | base_speed=%.2f m/s | init_angle=%.1f deg | rpts_thresh=%d | min_pid_speed=%.2f",
+    ROS_WARN("[CMD] StartFollow | path=%s | bias_left=%.1f | bias_right=%.1f | Time_local=%.2f | init_turn=%d | parking=%d | allow_either_l=%d | lost_search=%d | base_speed=%.2f m/s | init_angle=%.1f deg | rpts_thresh=%d | min_pid_speed=%.2f",
          pathToString(follow_test::path_select).c_str(),
          Dis_Bias_Left, Dis_Bias_Right,
          Time_local,
          follow_test::initial_turn_enabled,
          follow_test::parking_enabled,
+         follow_test::parking_allow_either_l,
+         follow_test::lost_corner_search_enabled,
          follow_test::base_speed,
          follow_test::initial_turn_angle_deg,
          follow_test::initial_turn_rpts_threshold,
