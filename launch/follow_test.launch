@@ -43,7 +43,7 @@
   <!-- 是否启用 L 型角点停车逻辑。 -->
   <arg name="parking_enabled" default="true" />
   <arg name="parking_allow_either_l" default="true" />
-  <arg name="parking_extra_dist" default="0.315" />
+  <arg name="parking_extra_dist" default="0.215" />
   <arg name="parking_forward_speed" default="0.15" />
 
   <!-- 是否发布调试图像 /flow_end/follow_test_debug，可用 rqt_image_view 查看。 -->

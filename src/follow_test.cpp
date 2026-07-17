@@ -17,6 +17,7 @@ int main(int argc, char **argv) {
     bool show_window = false;
     bool parking_enabled = true;
     bool parking_allow_either_l = true;
+    double parking_extra_dist = 0.215;
     double base_speed = 0.30;
     double aim_distance = 0.10;
     double aim_y_bias_m = 0.20;
@@ -47,6 +48,7 @@ int main(int argc, char **argv) {
     private_nh.param<bool>("show_window", show_window, false);
     private_nh.param<bool>("parking_enabled", parking_enabled, true);
     private_nh.param<bool>("parking_allow_either_l", parking_allow_either_l, true);
+    private_nh.param<double>("parking_extra_dist", parking_extra_dist, 0.215);
     private_nh.param<double>("base_speed", base_speed, 0.30);
     private_nh.param<double>("aim_distance", aim_distance, 0.10);
     private_nh.param<double>("aim_y_bias_m", aim_y_bias_m, 0.20);
@@ -71,7 +73,8 @@ int main(int argc, char **argv) {
                                      initial_turn_enabled, initial_turn_angle_deg,
                                      initial_turn_angular_speed, initial_turn_rpts_threshold,
                                      initial_turn_pause_sec, min_pid_speed,
-                                     parking_allow_either_l, lost_corner_search_enabled,
+                                     parking_allow_either_l, parking_extra_dist,
+                                     lost_corner_search_enabled,
                                      lost_corner_search_timeout,
                                      lost_corner_search_angular_speed,
                                      lost_corner_search_linear_speed);

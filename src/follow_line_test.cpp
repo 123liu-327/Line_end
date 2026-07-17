@@ -156,6 +156,7 @@ bool publish_debug_image = true;
 bool show_window = false;
 bool parking_enabled = true;
 bool parking_allow_either_l = true;
+double parking_extra_dist = 0.215;
 double base_speed = 0.30;
 double aim_distance = 0.10;
 double aim_y_bias_m = 0.20;
@@ -450,8 +451,8 @@ bool handleParkingCorner() {
     float last_print_dis = target_dis;  // 上次打印时的距离
     const float initial_target_dis = target_dis;
     const float parking_start_odom = odom_dist;
-    const float parking_extra_dist = 0.215f;
-    const float parking_total_dist = std::max(0.001f, std::abs(target_dis) + parking_extra_dist);
+    const float parking_total_dist =
+        std::max(0.001f, std::abs(target_dis) + static_cast<float>(parking_extra_dist));
     float parking_moved_from_velocity = 0.0f;
     float previous_target_dis = target_dis;  // 上一次的目标距离
     ros::Rate parking_rate(30.0);
@@ -1035,7 +1036,8 @@ void configure(bool publish_debug, bool show_debug_window, bool enable_parking,
                bool enable_initial_turn, double turn_angle_deg,
                double turn_angular_speed, int turn_rpts_threshold,
                double turn_pause_sec, double min_turn_pid_speed,
-               bool allow_either_l, bool enable_lost_corner_search,
+               bool allow_either_l, double extra_parking_dist,
+               bool enable_lost_corner_search,
                double lost_corner_timeout, double lost_corner_angular_speed,
                double lost_corner_linear_speed) {
     // 保存 launch 参数，供后续图像调试、停车开关和速度控制使用。
@@ -1043,6 +1045,7 @@ void configure(bool publish_debug, bool show_debug_window, bool enable_parking,
     show_window = show_debug_window;
     parking_enabled = enable_parking;
     parking_allow_either_l = allow_either_l;
+    parking_extra_dist = std::max(0.0, extra_parking_dist);
     base_speed = speed;
     aim_distance = distance;
     aim_y_bias_m = y_bias_m;
