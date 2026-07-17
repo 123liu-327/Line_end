@@ -27,6 +27,10 @@ extern bool show_window;
 extern bool parking_enabled;
 extern bool parking_allow_either_l;
 extern double parking_extra_dist;
+extern double parking_forward_speed;
+extern double parking_lateral_speed;
+extern double parking_lateral_deadband;
+extern double parking_lateral_cmd_sign;
 extern double base_speed;
 extern double aim_distance;
 extern double aim_y_bias_m;
@@ -60,6 +64,8 @@ void configure(bool publish_debug, bool show_debug_window, bool enable_parking,
                double initial_turn_angular_speed, int initial_turn_rpts_threshold,
                double initial_turn_pause_sec, double min_pid_speed,
                bool allow_either_l, double extra_parking_dist,
+               double forward_parking_speed, double lateral_parking_speed,
+               double lateral_parking_deadband, double lateral_cmd_sign,
                bool enable_lost_corner_search,
                double lost_corner_timeout, double lost_corner_angular_speed,
                double lost_corner_linear_speed);

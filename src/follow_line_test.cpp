@@ -157,6 +157,10 @@ bool show_window = false;
 bool parking_enabled = true;
 bool parking_allow_either_l = true;
 double parking_extra_dist = 0.215;
+double parking_forward_speed = 0.20;
+double parking_lateral_speed = 0.10;
+double parking_lateral_deadband = 0.03;
+double parking_lateral_cmd_sign = 1.0;
 double base_speed = 0.30;
 double aim_distance = 0.10;
 double aim_y_bias_m = 0.20;
@@ -360,6 +364,9 @@ bool handleParkingCorner() {
     bool is_stop_corner = false;
     const char *parking_line_type = "None";
     int parking_corner_id = -1;
+    float parking_shape_forward = 0.0f;
+    float parking_shape_lateral = 0.0f;
+    float parking_corner_y = 0.0f;
 
     if ((path_select == PathSelect::RIGHT ||
          (parking_allow_either_l && path_select == PathSelect::LEFT && !Lpt0_found)) &&
@@ -372,6 +379,9 @@ bool handleParkingCorner() {
                          (rptsc1[ip1][0] - rptsc1[Lpt1_rpts1s_id][0] < -20) &&
                          (rptsc1[Lpt1_rpts1s_id][1] > RESULT_ROW - 40);
         if (is_stop_corner) {
+            parking_shape_forward = rptsc1[im1][1] - rptsc1[Lpt1_rpts1s_id][1];
+            parking_shape_lateral = rptsc1[ip1][0] - rptsc1[Lpt1_rpts1s_id][0];
+            parking_corner_y = rptsc1[Lpt1_rpts1s_id][1];
             corner_move(rpts1s, corner_dot, Lpt1_rpts1s_id, -pixel_per_meter * ROAD_WIDTH / 2);
             parking_line_type = "Right_L";
             parking_corner_id = Lpt1_rpts1s_id;
@@ -386,6 +396,9 @@ bool handleParkingCorner() {
                          (rptsc0[ip0][0] - rptsc0[Lpt0_rpts0s_id][0] > 20) &&
                          (rptsc0[Lpt0_rpts0s_id][1] > RESULT_ROW - 40);
         if (is_stop_corner) {
+            parking_shape_forward = rptsc0[im0][1] - rptsc0[Lpt0_rpts0s_id][1];
+            parking_shape_lateral = rptsc0[ip0][0] - rptsc0[Lpt0_rpts0s_id][0];
+            parking_corner_y = rptsc0[Lpt0_rpts0s_id][1];
             corner_move(rpts0s, corner_dot, Lpt0_rpts0s_id, pixel_per_meter * ROAD_WIDTH / 2);
             parking_line_type = "Left_L";
             parking_corner_id = Lpt0_rpts0s_id;
@@ -400,6 +413,9 @@ bool handleParkingCorner() {
                          (rptsc1[ip1][0] - rptsc1[Lpt1_rpts1s_id][0] < -20) &&
                          (rptsc1[Lpt1_rpts1s_id][1] > RESULT_ROW - 40);
         if (is_stop_corner) {
+            parking_shape_forward = rptsc1[im1][1] - rptsc1[Lpt1_rpts1s_id][1];
+            parking_shape_lateral = rptsc1[ip1][0] - rptsc1[Lpt1_rpts1s_id][0];
+            parking_corner_y = rptsc1[Lpt1_rpts1s_id][1];
             corner_move(rpts1s, corner_dot, Lpt1_rpts1s_id, -pixel_per_meter * ROAD_WIDTH / 2);
             parking_line_type = "Right_L";
             parking_corner_id = Lpt1_rpts1s_id;
@@ -414,6 +430,9 @@ bool handleParkingCorner() {
                          (rptsc0[ip0][0] - rptsc0[Lpt0_rpts0s_id][0] > 20) &&
                          (rptsc0[Lpt0_rpts0s_id][1] > RESULT_ROW - 40);
         if (is_stop_corner) {
+            parking_shape_forward = rptsc0[im0][1] - rptsc0[Lpt0_rpts0s_id][1];
+            parking_shape_lateral = rptsc0[ip0][0] - rptsc0[Lpt0_rpts0s_id][0];
+            parking_corner_y = rptsc0[Lpt0_rpts0s_id][1];
             corner_move(rpts0s, corner_dot, Lpt0_rpts0s_id, pixel_per_meter * ROAD_WIDTH / 2);
             parking_line_type = "Left_L";
             parking_corner_id = Lpt0_rpts0s_id;
@@ -429,6 +448,16 @@ bool handleParkingCorner() {
                   rptsc0_num, rptsc1_num, parking_enabled, parking_allow_either_l);
         return false;
     }
+
+    ROS_WARN("[PARKING] CornerDetect accepted | path=%s | L0=%d(id=%d) | L1=%d(id=%d) | "
+             "left_pts=%d | right_pts=%d | line_type=%s | corner_id=%d | shape=(dy=%.1f,dx=%.1f,y=%.1f) | allow_either_l=%d",
+             pathToString(path_select).c_str(),
+             Lpt0_found, Lpt0_rpts0s_id,
+             Lpt1_found, Lpt1_rpts1s_id,
+             rptsc0_num, rptsc1_num,
+             parking_line_type, parking_corner_id,
+             parking_shape_forward, parking_shape_lateral, parking_corner_y,
+             parking_allow_either_l);
 
     const float cx = RESULT_COL / 2.0f;
     const float cy = RESULT_ROW + 10.0f;
@@ -471,11 +500,13 @@ bool handleParkingCorner() {
         last_time = now;
         parking_loop_count++;
 
-        local_msg.linear.x = 0.20;
+        local_msg.linear.x = parking_forward_speed;
         local_msg.linear.y = 0.0;
         // 横向误差较大时增加 y 方向微调，让停车点尽量落到车体中心附近。
-        if (std::abs(target_dis_x) >= 0.08) {
-            local_msg.linear.y = target_dis_x > 0 ? 0.1 : -0.1;
+        const bool needs_lateral_adjust = std::abs(target_dis_x) >= parking_lateral_deadband;
+        const double desired_lateral = target_dis_x > 0 ? parking_lateral_speed : -parking_lateral_speed;
+        if (needs_lateral_adjust) {
+            local_msg.linear.y = parking_lateral_cmd_sign * desired_lateral;
         }
         local_msg.angular.z = 0.0;
 
@@ -486,7 +517,7 @@ bool handleParkingCorner() {
         // 保存旧值用于检测异常
         previous_target_dis = target_dis;
         target_dis = initial_target_dis - parking_moved;
-        target_dis_x -= local_msg.linear.y * dt;
+        target_dis_x -= static_cast<float>(needs_lateral_adjust ? desired_lateral * dt : 0.0);
 
         // 检测距离异常（不应该增加）
         if (target_dis > previous_target_dis && parking_loop_count > 10) {
@@ -511,11 +542,13 @@ bool handleParkingCorner() {
             if (std::abs(target_dis - last_print_dis) > 0.02f) {
                 last_print_dis = target_dis;
                 ROS_WARN("[PARKING_PROGRESS] Approaching... | progress=%.0f%% | long_dist=%.3fm/%.3fm | "
-                         "lat_bias=%.3fm | vel=(%.2f,%.2f) | dt=%.4fs | loops=%d | elapsed=%.2fs",
+                         "lat_bias=%.3fm | vel=(%.2f,%.2f) | lat_deadband=%.3f | y_sign=%.0f | dt=%.4fs | loops=%d | elapsed=%.2fs",
                          std::max(0.0f, std::min(progress_percent, 100.0f)),
                          remaining_dis, parking_total_dist,
                          target_dis_x,
                          local_msg.linear.x, local_msg.linear.y,
+                         parking_lateral_deadband,
+                         parking_lateral_cmd_sign,
                          dt, parking_loop_count, elapsed_sec);
             }
         }
@@ -1037,6 +1070,8 @@ void configure(bool publish_debug, bool show_debug_window, bool enable_parking,
                double turn_angular_speed, int turn_rpts_threshold,
                double turn_pause_sec, double min_turn_pid_speed,
                bool allow_either_l, double extra_parking_dist,
+               double forward_parking_speed, double lateral_parking_speed,
+               double lateral_parking_deadband, double lateral_cmd_sign,
                bool enable_lost_corner_search,
                double lost_corner_timeout, double lost_corner_angular_speed,
                double lost_corner_linear_speed) {
@@ -1046,6 +1081,10 @@ void configure(bool publish_debug, bool show_debug_window, bool enable_parking,
     parking_enabled = enable_parking;
     parking_allow_either_l = allow_either_l;
     parking_extra_dist = std::max(0.0, extra_parking_dist);
+    parking_forward_speed = std::max(0.0, forward_parking_speed);
+    parking_lateral_speed = std::max(0.0, lateral_parking_speed);
+    parking_lateral_deadband = std::max(0.0, lateral_parking_deadband);
+    parking_lateral_cmd_sign = lateral_cmd_sign < 0.0 ? -1.0 : 1.0;
     base_speed = speed;
     aim_distance = distance;
     aim_y_bias_m = y_bias_m;

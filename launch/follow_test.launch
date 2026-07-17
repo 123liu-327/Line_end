@@ -44,7 +44,10 @@
   <arg name="parking_enabled" default="true" />
   <arg name="parking_allow_either_l" default="true" />
   <arg name="parking_extra_dist" default="0.215" />
-  <arg name="parking_forward_speed" default="0.15" />
+  <arg name="parking_forward_speed" default="0.20" />
+  <arg name="parking_lateral_speed" default="0.10" />
+  <arg name="parking_lateral_deadband" default="0.03" />
+  <arg name="parking_lateral_cmd_sign" default="1.0" />
 
   <!-- 是否发布调试图像 /flow_end/follow_test_debug，可用 rqt_image_view 查看。 -->
   <arg name="publish_debug_image" default="true" />
@@ -162,6 +165,9 @@
     <param name="parking_allow_either_l" value="$(arg parking_allow_either_l)" />
     <param name="parking_extra_dist" value="$(arg parking_extra_dist)" />
     <param name="parking_forward_speed" value="$(arg parking_forward_speed)" />
+    <param name="parking_lateral_speed" value="$(arg parking_lateral_speed)" />
+    <param name="parking_lateral_deadband" value="$(arg parking_lateral_deadband)" />
+    <param name="parking_lateral_cmd_sign" value="$(arg parking_lateral_cmd_sign)" />
     <param name="publish_debug_image" value="$(arg publish_debug_image)" />
     <param name="show_window" value="$(arg show_window)" />
     <param name="enable_video_record" value="$(arg enable_video_record)" />

@@ -18,6 +18,10 @@ int main(int argc, char **argv) {
     bool parking_enabled = true;
     bool parking_allow_either_l = true;
     double parking_extra_dist = 0.215;
+    double parking_forward_speed = 0.20;
+    double parking_lateral_speed = 0.10;
+    double parking_lateral_deadband = 0.03;
+    double parking_lateral_cmd_sign = 1.0;
     double base_speed = 0.30;
     double aim_distance = 0.10;
     double aim_y_bias_m = 0.20;
@@ -49,6 +53,10 @@ int main(int argc, char **argv) {
     private_nh.param<bool>("parking_enabled", parking_enabled, true);
     private_nh.param<bool>("parking_allow_either_l", parking_allow_either_l, true);
     private_nh.param<double>("parking_extra_dist", parking_extra_dist, 0.215);
+    private_nh.param<double>("parking_forward_speed", parking_forward_speed, 0.20);
+    private_nh.param<double>("parking_lateral_speed", parking_lateral_speed, 0.10);
+    private_nh.param<double>("parking_lateral_deadband", parking_lateral_deadband, 0.03);
+    private_nh.param<double>("parking_lateral_cmd_sign", parking_lateral_cmd_sign, 1.0);
     private_nh.param<double>("base_speed", base_speed, 0.30);
     private_nh.param<double>("aim_distance", aim_distance, 0.10);
     private_nh.param<double>("aim_y_bias_m", aim_y_bias_m, 0.20);
@@ -74,6 +82,8 @@ int main(int argc, char **argv) {
                                      initial_turn_angular_speed, initial_turn_rpts_threshold,
                                      initial_turn_pause_sec, min_pid_speed,
                                      parking_allow_either_l, parking_extra_dist,
+                                     parking_forward_speed, parking_lateral_speed,
+                                     parking_lateral_deadband, parking_lateral_cmd_sign,
                                      lost_corner_search_enabled,
                                      lost_corner_search_timeout,
                                      lost_corner_search_angular_speed,
