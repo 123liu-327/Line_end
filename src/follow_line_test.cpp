@@ -1,5 +1,6 @@
 #include <flow_end/follow.h>
 #include <flow_end/follow_line_test.h>
+#include <flow_end/DebugVisionOverlay.h>
 #include <flow_end/ImagePerspectiveInit.h>
 #include <flow_end/MatTransform.h>
 #include <flow_end/process_image.h>
@@ -98,9 +99,9 @@ float rptsc0e[POINTS_MAX_LEN][2];
 float rptsc1e[POINTS_MAX_LEN][2];
 int rptsc0e_num = 0, rptsc1e_num = 0;
 
-int Ypt0_rpts0s_id = 0, Ypt1_rpts1s_id = 0;
+int Ypt0_rpts0s_id = -1, Ypt1_rpts1s_id = -1;
 bool Ypt0_found = false, Ypt1_found = false;
-int Lpt0_rpts0s_id = 0, Lpt1_rpts1s_id = 0;
+int Lpt0_rpts0s_id = -1, Lpt1_rpts1s_id = -1;
 bool Lpt0_found = false, Lpt1_found = false;
 const float PI = 3.14159265358979323846f;
 bool is_straight0 = false, is_straight1 = false;
@@ -189,6 +190,17 @@ std::string pathToString(PathSelect path) {
         case PathSelect::RIGHT: return "right";
     }
     return "unknown";
+}
+
+std::string motionStateToString(MotionState state) {
+    switch (state) {
+        case MotionState::IDLE: return "IDLE";
+        case MotionState::ALIGNING_LEFT: return "ALIGNING_LEFT";
+        case MotionState::ALIGNING_RIGHT: return "ALIGNING_RIGHT";
+        case MotionState::ALIGN_PAUSE: return "ALIGN_PAUSE";
+        case MotionState::FOLLOWING: return "FOLLOWING";
+    }
+    return "UNKNOWN";
 }
 
 void publishStatus(const std::string &state);
@@ -282,6 +294,10 @@ void detectCorners() {
     Lpt1_found = false;
     Ypt0_found = false;
     Lpt0_found = false;
+    Ypt0_rpts0s_id = -1;
+    Ypt1_rpts1s_id = -1;
+    Lpt0_rpts0s_id = -1;
+    Lpt1_rpts1s_id = -1;
     is_straight0 = rpts0s_num > 1.0 / sample_dist;
     is_straight1 = rpts1s_num > 1.0 / sample_dist;
 
@@ -690,44 +706,123 @@ ROS_WARN_THROTTLE(0.5,
 }
 
 void publishDebugImage(const sensor_msgs::ImageConstPtr &source_msg) {
-    // 调试图像是 MONO8：底图来自 ImageUsed，随后叠加左右偏移线和当前控制路径。
-    // 颜色值约定：0 标左线，80 标右线，160 标当前选择的控制路径。
+    // 调试图像底图来自真实 IPM 鸟瞰图，彩色叠加边线、控制路径和角点。
     for (int i = 0; i < RESULT_ROW; ++i) {
         for (int j = 0; j < RESULT_COL; ++j) {
-            img_line_data[i][j] = ImageUsed[i][j];
+            // process_image() 使用反色图；这里只反转显示值，恢复真实灰度鸟瞰底图。
+            img_line_data[i][j] = 255 - ImageUsed[i][j];
         }
     }
-    for (int i = 0; i < rptsc0e_num; ++i) {
-        AT_IMAGE(&img_line, clip(rptsc0e[i][0], 0, img_line.width - 1),
-                 clip(rptsc0e[i][1], 0, img_line.height - 1)) = 0;
+    cv::Mat bird_gray = convert2DArrayToMat(img_line_data);
+    cv::Mat debug_bgr;
+    cv::cvtColor(bird_gray, debug_bgr, cv::COLOR_GRAY2BGR);
+
+    using namespace flow_end::debug_overlay;
+    const std::string pixel_stats =
+        lanePixelStatsLine(bird_gray, rpts0s, rpts0s_num, rpts1s, rpts1s_num);
+    drawPointSeries(debug_bgr, rpts0s, rpts0s_num, cv::Scalar(40, 230, 40), 2);
+    drawPointSeries(debug_bgr, rpts1s, rpts1s_num, cv::Scalar(230, 40, 230), 2);
+    drawPointSeries(debug_bgr, rptsc0e, rptsc0e_num, cv::Scalar(0, 220, 255), 1, 2);
+    drawPointSeries(debug_bgr, rptsc1e, rptsc1e_num, cv::Scalar(255, 220, 0), 1, 2);
+    drawPointSeries(debug_bgr, rpts, rpts_num, cv::Scalar(255, 255, 255), 2, 2);
+
+    if (Lpt0_found) {
+        drawCornerMarker(debug_bgr, rpts0s, rpts0s_num, Lpt0_rpts0s_id,
+                         "L0", cv::Scalar(0, 80, 255), false,
+                         cornerConfidenceDeg(rpts0a, rpts0s_num, Lpt0_rpts0s_id,
+                                             angle_dist, sample_dist));
     }
-    for (int i = 0; i < rptsc1e_num; ++i) {
-        AT_IMAGE(&img_line, clip(rptsc1e[i][0], 0, img_line.width - 1),
-                 clip(rptsc1e[i][1], 0, img_line.height - 1)) = 80;
+    if (Lpt1_found) {
+        drawCornerMarker(debug_bgr, rpts1s, rpts1s_num, Lpt1_rpts1s_id,
+                         "L1", cv::Scalar(255, 80, 30), false,
+                         cornerConfidenceDeg(rpts1a, rpts1s_num, Lpt1_rpts1s_id,
+                                             angle_dist, sample_dist));
     }
-    for (int i = 0; i < rpts_num; ++i) {
-        AT_IMAGE(&img_line, clip(rpts[i][0], 0, img_line.width - 1),
-                 clip(rpts[i][1], 0, img_line.height - 1)) = 160;
+    if (Ypt0_found) {
+        drawCornerMarker(debug_bgr, rpts0s, rpts0s_num, Ypt0_rpts0s_id,
+                         "Y0", cv::Scalar(0, 255, 255), true,
+                         cornerConfidenceDeg(rpts0a, rpts0s_num, Ypt0_rpts0s_id,
+                                             angle_dist, sample_dist));
+    }
+    if (Ypt1_found) {
+        drawCornerMarker(debug_bgr, rpts1s, rpts1s_num, Ypt1_rpts1s_id,
+                         "Y1", cv::Scalar(255, 255, 0), true,
+                         cornerConfidenceDeg(rpts1a, rpts1s_num, Ypt1_rpts1s_id,
+                                             angle_dist, sample_dist));
     }
 
-    cv::Mat debug_gray = convert2DArrayToMat(img_line_data);
+    const CornerCandidate candidate0 = strongestCandidate(
+        rpts0a, rpts0an, rpts0s_num, angle_dist, sample_dist);
+    const CornerCandidate candidate1 = strongestCandidate(
+        rpts1a, rpts1an, rpts1s_num, angle_dist, sample_dist);
+    if (!Lpt0_found && !Ypt0_found) {
+        drawCandidateMarker(debug_bgr, rpts0s, rpts0s_num, candidate0,
+                            "C0", cv::Scalar(190, 190, 190));
+    }
+    if (!Lpt1_found && !Ypt1_found) {
+        drawCandidateMarker(debug_bgr, rpts1s, rpts1s_num, candidate1,
+                            "C1", cv::Scalar(150, 150, 150));
+    }
+    std::ostringstream state_line;
+    state_line << "IPM BIRD | path=" << pathToString(path_select)
+               << " state=" << motionStateToString(motion_state)
+               << " degraded=" << is_degraded_mode << " run=" << run_car;
+    std::ostringstream counts;
+    counts << "input L/R=" << ipts0_num << "/" << ipts1_num
+           << " mapped=" << rpts0_num << "/" << rpts1_num
+           << " sampled=" << rpts0s_num << "/" << rpts1s_num
+           << " target=" << rptsc0e_num << "/" << rptsc1e_num
+           << " selected=" << rpts_num;
+    std::ostringstream candidates;
+    candidates << "best C0=";
+    if (candidate0.valid) {
+        candidates << candidate0.index << ":" << std::fixed << std::setprecision(1)
+                   << candidate0.confidence_deg << "deg";
+    } else {
+        candidates << "none";
+    }
+    candidates << " | C1=";
+    if (candidate1.valid) {
+        candidates << candidate1.index << ":" << std::fixed << std::setprecision(1)
+                   << candidate1.confidence_deg << "deg";
+    } else {
+        candidates << "none";
+    }
+    std::ostringstream control;
+    control << "bias L/R=" << std::fixed << std::setprecision(1)
+            << Dis_Bias_Left << "/" << Dis_Bias_Right
+            << " cmd v/w=" << std::setprecision(2)
+            << current_linear_velocity_x << "/" << current_angular_velocity_z;
+    drawStatusPanel(debug_bgr, {
+        state_line.str(),
+        counts.str(),
+        cornerStatus("L0", Lpt0_found, Lpt0_rpts0s_id, rpts0s, rpts0s_num,
+                     rpts0a, angle_dist, sample_dist) + " | " +
+            cornerStatus("L1", Lpt1_found, Lpt1_rpts1s_id, rpts1s, rpts1s_num,
+                         rpts1a, angle_dist, sample_dist),
+        cornerStatus("Y0", Ypt0_found, Ypt0_rpts0s_id, rpts0s, rpts0s_num,
+                     rpts0a, angle_dist, sample_dist) + " | " +
+            cornerStatus("Y1", Ypt1_found, Ypt1_rpts1s_id, rpts1s, rpts1s_num,
+                         rpts1a, angle_dist, sample_dist),
+        pixel_stats,
+        candidates.str(),
+        control.str(),
+        "THRESH Y=25..65deg L=70..110deg range<0.8m | L=circle Y=X C=diamond"
+    });
 
-    // Publish the processed MONO8 frame for rqt_image_view and ROS tools.
-    // Keep this independent from optional local windows and AVI recording.
     if (publish_debug_image && debug_pub) {
         std_msgs::Header header;
         if (source_msg) {
             header = source_msg->header;
         }
-        sensor_msgs::ImagePtr message = cv_bridge::CvImage(
-            header, sensor_msgs::image_encodings::MONO8, debug_gray
-        ).toImageMsg();
-        debug_pub.publish(message);
+        sensor_msgs::ImagePtr msg = cv_bridge::CvImage(
+            header, sensor_msgs::image_encodings::BGR8, debug_bgr).toImageMsg();
+        debug_pub.publish(msg);
     }
 
     // 显示窗口（如果启用）
     if (show_window) {
-        cv::imshow("follow_test", debug_gray);
+        cv::imshow("follow_test", debug_bgr);
         cv::waitKey(1);
     }
 
@@ -749,7 +844,7 @@ void publishDebugImage(const sensor_msgs::ImageConstPtr &source_msg) {
                 cv::VideoWriter::fourcc('M', 'J', 'P', 'G'),
                 video_fps,
                 cv::Size(RESULT_COL, RESULT_ROW),
-                false  // 灰度图
+                true
             );
 
             if (debug_video_writer.isOpened()) {
@@ -762,7 +857,7 @@ void publishDebugImage(const sensor_msgs::ImageConstPtr &source_msg) {
 
         // 写入当前帧
         if (video_recording && debug_video_writer.isOpened()) {
-            debug_video_writer.write(debug_gray);
+            debug_video_writer.write(debug_bgr);
         }
     }
 }
