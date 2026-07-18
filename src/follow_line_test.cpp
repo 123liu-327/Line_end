@@ -236,6 +236,28 @@ std::string pathToString(PathSelect path) {
     return "unknown";
 }
 
+void applyPathBiasParams(PathSelect path) {
+    ros::NodeHandle private_nh("~");
+    const std::string prefix = pathToString(path);
+
+    double default_left_bias = 0.0;
+    double default_right_bias = 0.0;
+    double time_local = Time_local;
+    private_nh.param<double>("default_dis_bias_left", default_left_bias, default_left_bias);
+    private_nh.param<double>("default_dis_bias_right", default_right_bias, default_right_bias);
+    private_nh.param<double>("time_local", time_local, time_local);
+
+    double left_bias = default_left_bias;
+    double right_bias = default_right_bias;
+    private_nh.param<double>(prefix + "_dis_bias_left", left_bias, left_bias);
+    private_nh.param<double>(prefix + "_dis_bias_right", right_bias, right_bias);
+    private_nh.param<double>(prefix + "_time_local", time_local, time_local);
+
+    Dis_Bias_Left = static_cast<float>(left_bias);
+    Dis_Bias_Right = static_cast<float>(right_bias);
+    Time_local = time_local;
+}
+
 std::string motionStateToString(MotionState state) {
     switch (state) {
         case MotionState::IDLE: return "IDLE";
@@ -685,13 +707,15 @@ bool handleYBranchFlow() {
             const PathSelect completed_branch = pending_branch_path;
             path_select = completed_branch;
             track_type = completed_branch == PathSelect::LEFT ? TRACK_LEFT : TRACK_RIGHT;
+            applyPathBiasParams(completed_branch);
             resetYBranchState();
             motion_state = MotionState::FOLLOWING;
             resetParkingCornerState();
             publishStatus("RUNNING_" + pathToString(completed_branch));
             ROS_WARN(
-                "[Y_BRANCH] Switched to branch follow | path=%s | pause=%.2fs",
-                pathToString(completed_branch).c_str(), elapsed);
+                "[Y_BRANCH] Switched to branch follow | path=%s | pause=%.2fs | bias_left=%.1f | bias_right=%.1f | Time_local=%.2f",
+                pathToString(completed_branch).c_str(), elapsed,
+                Dis_Bias_Left, Dis_Bias_Right, Time_local);
         }
         return true;
     }
