@@ -1,6 +1,7 @@
 #include <flow_end/follow.h>
 #include <flow_end/follow_line_test.h>
 #include <flow_end/follow_motion_controller.h>
+#include <flow_end/parking_s_curve.h>
 #include <flow_end/ImagePerspectiveInit.h>
 #include <flow_end/MatTransform.h>
 #include <flow_end/process_image.h>
@@ -163,6 +164,13 @@ double parking_forward_speed = 0.20;
 double parking_lateral_speed = 0.10;
 double parking_lateral_deadband = 0.03;
 double parking_lateral_cmd_sign = 1.0;
+std::string parking_motion_mode = "s_curve";
+double parking_max_angular_speed = 0.35;
+double parking_yaw_kp = 1.5;
+double parking_yaw_tolerance_deg = 3.0;
+double parking_timeout = 6.0;
+double parking_odom_timeout = 0.5;
+ros::Time last_odom_time;
 double base_speed = 0.30;
 double aim_distance = 0.10;
 double aim_y_bias_m = 0.20;
@@ -726,7 +734,7 @@ bool handleYBranchFlow() {
 bool handleParkingCorner() {
     // 停车逻辑保留原工程的“近距离 L 角点停车”能力。
     // 判断到靠近图像底部的 L 型角点后，先计算角点相对车体中心的距离，
-    // 再用一个低速前进/横移的小循环把车挪到停车位置，最后发布 STOP。
+    // 再用低速 S 弯（或兼容的 lateral 模式）把车挪到停车位置，最后发布 STOP。
     if (!parking_enabled) {
         return false;
     }
@@ -848,20 +856,53 @@ bool handleParkingCorner() {
 
     int parking_loop_count = 0;  // 停车循环计数器
     ros::Time parking_start_time = ros::Time::now();  // 停车开始时间
-    float last_print_dis = target_dis;  // 上次打印时的距离
-    const float initial_target_dis = target_dis;
-    const float parking_start_odom = odom_dist;
-    const float parking_total_dist =
-        std::max(0.001f, std::abs(target_dis) + static_cast<float>(parking_extra_dist));
-    float parking_moved_from_velocity = 0.0f;
-    float previous_target_dis = target_dis;  // 上一次的目标距离
+    const double parking_total_dist =
+        std::max(0.001, std::abs(static_cast<double>(target_dis)) + parking_extra_dist);
+    const double parking_target_lateral = parking_lateral_cmd_sign * target_dis_x;
+    const bool use_s_curve = parking_motion_mode == "s_curve";
+    const ParkingSCurvePlan s_curve_plan = makeParkingSCurvePlan(
+        parking_total_dist, parking_target_lateral, parking_forward_speed,
+        parking_lateral_deadband, parking_max_angular_speed);
+    const double parking_path_length = use_s_curve
+        ? s_curve_plan.total_length
+        : parking_total_dist;
+    const double parking_cmd_speed = use_s_curve
+        ? s_curve_plan.forward_speed
+        : parking_forward_speed;
+    const double parking_start_yaw = current_yaw * PI / 180.0;
+    const double yaw_tolerance_rad = parking_yaw_tolerance_deg * PI / 180.0;
+    double parking_moved = 0.0;
+    double legacy_lateral_remaining = parking_target_lateral;
+    double last_print_moved = -1.0;
     ros::Rate parking_rate(30.0);
+
+    ROS_WARN("[PARKING_PLAN] mode=%s | target=(%.3f,%.3f)m | curved=%d | radius=%.3fm | "
+             "peak_yaw=%.1fdeg | path=%.3fm | cmd_v=%.3fm/s | ff_wz=%.3frad/s | start_yaw=%.1fdeg",
+             parking_motion_mode.c_str(), parking_total_dist, parking_target_lateral,
+             s_curve_plan.curved, s_curve_plan.radius,
+             s_curve_plan.peak_yaw * 180.0 / PI, parking_path_length,
+             parking_cmd_speed, s_curve_plan.feedforward_wz, current_yaw);
+
+    const auto abortParking = [&](const std::string &status, const char *reason) {
+        publishStop();
+        run_car = false;
+        resetParkingCornerState();
+        publishStatus(status);
+        ROS_ERROR("[PARKING_ABORT] %s | moved=%.3fm/%.3fm | elapsed=%.2fs",
+                  reason, parking_moved, parking_path_length,
+                  (ros::Time::now() - parking_start_time).toSec());
+    };
 
     while (ros::ok()) {
         ros::spinOnce();
+        if (!run_car) {
+            // beginCallback 已经为 Stop 指令发布零速度并切换为 IDLE。
+            return true;
+        }
+
         const ros::Time now = ros::Time::now();
         float dt = (now - last_time).toSec();
-        
+
         // Only integrate with real elapsed time; the rate sleep below prevents
         // the parking loop from virtually consuming distance in a few ms.
         if (dt < 0.0f || dt > 0.2f) {
@@ -871,72 +912,78 @@ bool handleParkingCorner() {
         last_time = now;
         parking_loop_count++;
 
-        local_msg.linear.x = parking_forward_speed;
-        local_msg.linear.y = 0.0;
-        // 横向误差较大时增加 y 方向微调，让停车点尽量落到车体中心附近。
-        const bool needs_lateral_adjust = std::abs(target_dis_x) >= parking_lateral_deadband;
-        const double desired_lateral = target_dis_x > 0 ? parking_lateral_speed : -parking_lateral_speed;
-        if (needs_lateral_adjust) {
-            local_msg.linear.y = parking_lateral_cmd_sign * desired_lateral;
+        const double elapsed_sec = (now - parking_start_time).toSec();
+        if (elapsed_sec > parking_timeout) {
+            abortParking("PARKING_ABORTED_TIMEOUT", "parking timeout");
+            return true;
         }
+        if (last_odom_time.isZero() ||
+            (now - last_odom_time).toSec() > parking_odom_timeout) {
+            abortParking("PARKING_ABORTED_ODOM", "odometry missing or stale");
+            return true;
+        }
+
+        parking_moved += std::abs(current_linear_velocity_x) * dt;
+        const double traveled = std::min(parking_moved, parking_path_length);
+        const double relative_yaw = normalizeAngle(current_yaw * PI / 180.0 - parking_start_yaw);
+        const double reference_yaw = use_s_curve
+            ? parkingSCurveReferenceYaw(s_curve_plan, traveled)
+            : 0.0;
+        const double yaw_error = normalizeAngle(reference_yaw - relative_yaw);
+        const bool path_complete = parking_moved >= parking_path_length;
+
+        local_msg.linear.x = path_complete ? 0.0 : parking_cmd_speed;
+        local_msg.linear.y = 0.0;
         local_msg.angular.z = 0.0;
 
-        parking_moved_from_velocity += static_cast<float>(std::abs(current_linear_velocity_x)) * dt;
-        const float parking_moved = std::max(std::abs(odom_dist - parking_start_odom),
-                                             parking_moved_from_velocity);
-
-        // 保存旧值用于检测异常
-        previous_target_dis = target_dis;
-        target_dis = initial_target_dis - parking_moved;
-        target_dis_x -= static_cast<float>(needs_lateral_adjust ? desired_lateral * dt : 0.0);
-
-        // 检测距离异常（不应该增加）
-        if (target_dis > previous_target_dis && parking_loop_count > 10) {
-            ROS_ERROR("[PARKING_ERROR] Distance increased! prev=%.3fm -> curr=%.3fm | dt=%.4fs",
-                     previous_target_dis, target_dis, dt);
+        if (use_s_curve) {
+            const double feedforward_wz = parkingSCurveFeedforwardWz(s_curve_plan, traveled);
+            const double requested_wz = feedforward_wz + parking_yaw_kp * yaw_error;
+            local_msg.angular.z = std::max(-parking_max_angular_speed,
+                                           std::min(parking_max_angular_speed, requested_wz));
+        } else if (!path_complete &&
+                   std::abs(legacy_lateral_remaining) >= parking_lateral_deadband) {
+            local_msg.linear.y = legacy_lateral_remaining > 0.0
+                ? parking_lateral_speed
+                : -parking_lateral_speed;
+            legacy_lateral_remaining -= local_msg.linear.y * dt;
         }
 
-        float elapsed_sec = (now - parking_start_time).toSec();
         if (elapsed_sec > 1.0f && parking_moved < 0.02f) {
-            ROS_WARN_THROTTLE(1.0, "[PARKING_STUCK] cmd_vel is being published but odom_moved=%.3fm/%.3fm | odom_vx=%.3fm/s",
-                              parking_moved, parking_total_dist, current_linear_velocity_x);
+            ROS_WARN_THROTTLE(1.0, "[PARKING_STUCK] cmd_vel is being published but moved=%.3fm/%.3fm | odom_vx=%.3fm/s",
+                              parking_moved, parking_path_length, current_linear_velocity_x);
         }
 
-        // 靠近停车点时的调试信息（距离 < 0.5m 时开始打印）
-        if (std::abs(target_dis) < 0.5f) {
-            // Use the full planned parking distance: visible corner distance
-            // plus the configured extra distance after crossing the L point.
-            float remaining_dis = std::max(0.0f, parking_total_dist - parking_moved);
-            float progress_percent = ((parking_total_dist - remaining_dis) / parking_total_dist) * 100.0f;
-            
-            // Print when distance changes to avoid spamming
-            if (std::abs(target_dis - last_print_dis) > 0.02f) {
-                last_print_dis = target_dis;
-                ROS_WARN("[PARKING_PROGRESS] Approaching... | progress=%.0f%% | long_dist=%.3fm/%.3fm | "
-                         "lat_bias=%.3fm | vel=(%.2f,%.2f) | lat_deadband=%.3f | y_sign=%.0f | dt=%.4fs | loops=%d | elapsed=%.2fs",
-                         std::max(0.0f, std::min(progress_percent, 100.0f)),
-                         remaining_dis, parking_total_dist,
-                         target_dis_x,
-                         local_msg.linear.x, local_msg.linear.y,
-                         parking_lateral_deadband,
-                         parking_lateral_cmd_sign,
-                         dt, parking_loop_count, elapsed_sec);
-            }
+        if (parking_moved - last_print_moved >= 0.02 ||
+            (path_complete && parking_loop_count % 15 == 0)) {
+            last_print_moved = parking_moved;
+            const double remaining = std::max(0.0, parking_path_length - parking_moved);
+            const double progress = 100.0 * traveled / std::max(0.001, parking_path_length);
+            ROS_WARN("[PARKING_PROGRESS] progress=%.0f%% | remaining=%.3fm/%.3fm | "
+                     "yaw=(ref=%.1f,actual=%.1f,error=%.1f)deg | cmd=(%.2f,%.2f,%.2f) | "
+                     "odom_age=%.3fs | loops=%d | elapsed=%.2fs",
+                     std::max(0.0, std::min(progress, 100.0)),
+                     remaining, parking_path_length,
+                     reference_yaw * 180.0 / PI,
+                     relative_yaw * 180.0 / PI,
+                     yaw_error * 180.0 / PI,
+                     local_msg.linear.x, local_msg.linear.y, local_msg.angular.z,
+                     (now - last_odom_time).toSec(), parking_loop_count, elapsed_sec);
         }
 
-        if (parking_moved >= parking_total_dist) {
+        const bool heading_aligned = std::abs(yaw_error) <= yaw_tolerance_rad;
+        if (path_complete && (!use_s_curve || heading_aligned)) {
             // 到达停车距离后，先发零速度，再向 end_topic 发布 STOP，
             // 这样外部上层逻辑可以知道本段巡线已经结束。
-            
-            float total_time = (now - parking_start_time).toSec();
-            ROS_WARN("[PARKING] Parking finished! | final_long_dist=%.3fm | final_lat_bias=%.3fm | "
-                     "odom_moved=%.3fm/%.3fm | total_loops=%d | total_time=%.2fs | line_type=%s",
-                     std::max(0.0f, parking_total_dist - parking_moved),
-                     target_dis_x,
+            ROS_WARN("[PARKING] Parking finished! | remaining=%.3fm | target_lat=%.3fm | "
+                     "yaw_error=%.2fdeg | moved=%.3fm/%.3fm | total_loops=%d | total_time=%.2fs | line_type=%s",
+                     std::max(0.0, parking_path_length - parking_moved),
+                     parking_target_lateral,
+                     yaw_error * 180.0 / PI,
                      parking_moved,
-                     parking_total_dist,
+                     parking_path_length,
                      parking_loop_count,
-                     total_time,
+                     elapsed_sec,
                      parking_line_type);
             
             publishStop();
@@ -1440,6 +1487,10 @@ void configure(bool publish_debug, bool show_debug_window, bool enable_parking,
                bool allow_either_l, double extra_parking_dist,
                double forward_parking_speed, double lateral_parking_speed,
                double lateral_parking_deadband, double lateral_cmd_sign,
+               const std::string &parking_mode,
+               double max_parking_angular_speed, double parking_heading_kp,
+               double parking_heading_tolerance_deg,
+               double parking_timeout_sec, double parking_odom_timeout_sec,
                bool enable_lost_corner_search,
                double lost_corner_timeout, double lost_corner_angular_speed,
                double lost_corner_linear_speed) {
@@ -1453,6 +1504,20 @@ void configure(bool publish_debug, bool show_debug_window, bool enable_parking,
     parking_lateral_speed = std::max(0.0, lateral_parking_speed);
     parking_lateral_deadband = std::max(0.0, lateral_parking_deadband);
     parking_lateral_cmd_sign = lateral_cmd_sign < 0.0 ? -1.0 : 1.0;
+    parking_motion_mode = parking_mode;
+    std::transform(parking_motion_mode.begin(), parking_motion_mode.end(),
+                   parking_motion_mode.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    if (parking_motion_mode != "s_curve" && parking_motion_mode != "lateral") {
+        ROS_WARN("Unknown parking_motion_mode '%s', fallback to s_curve.",
+                 parking_motion_mode.c_str());
+        parking_motion_mode = "s_curve";
+    }
+    parking_max_angular_speed = std::max(0.0, max_parking_angular_speed);
+    parking_yaw_kp = std::max(0.0, parking_heading_kp);
+    parking_yaw_tolerance_deg = std::max(0.0, parking_heading_tolerance_deg);
+    parking_timeout = std::max(0.1, parking_timeout_sec);
+    parking_odom_timeout = std::max(0.05, parking_odom_timeout_sec);
     base_speed = speed;
     aim_distance = distance;
     aim_y_bias_m = y_bias_m;
