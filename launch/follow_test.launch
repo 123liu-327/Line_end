@@ -190,7 +190,7 @@
     达到后会以 reason=max_odom 强制进入 Y 转向；增大可以多找一段，但会更深入岔路。
     0.08 m/s 下每增加 0.10 m，理论上会多搜索约 1.25 s。
   -->
-  <arg name="y_crossbar_seek_max_odom" default="0.55" />
+  <arg name="y_crossbar_seek_max_odom" default="0.75" />
 
   <!-- ======================== 中线接近控制器参数 ======================== -->
   <!-- 以下 control_* 只用于接入 follow_motion_controller 的特殊阶段；普通巡线仍使用当前控制。 -->
