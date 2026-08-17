@@ -18,7 +18,11 @@ find_package(catkin REQUIRED COMPONENTS
 
 find_package(OpenCV REQUIRED)
 
-catkin_package()
+catkin_package(
+  INCLUDE_DIRS include
+  LIBRARIES flow_end_ipm_core flow_end_yellow_line
+  CATKIN_DEPENDS roscpp sensor_msgs std_msgs cv_bridge image_transport
+)
 
 install(DIRECTORY launch/
   DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/launch
@@ -99,6 +103,20 @@ target_link_libraries(follow_test
   ${catkin_LIBRARIES}
   ${OpenCV_LIBRARIES}
 )
+
+add_library(flow_end_ipm_core
+  src/vision_globals.cpp
+  src/ImagePerspectiveInit.cpp
+  src/generateLookupTable.cpp
+)
+target_link_libraries(flow_end_ipm_core ${catkin_LIBRARIES} ${OpenCV_LIBRARIES})
+
+add_library(flow_end_yellow_line src/yellow_line_detector.cpp)
+target_link_libraries(flow_end_yellow_line flow_end_ipm_core ${catkin_LIBRARIES} ${OpenCV_LIBRARIES})
+
+add_executable(yellow_line_detector src/yellow_line_detector_node.cpp)
+target_link_libraries(yellow_line_detector flow_end_yellow_line flow_end_ipm_core
+  ${catkin_LIBRARIES} ${OpenCV_LIBRARIES} ${cv_bridge_LIBRARIES})
 
 if(CATKIN_ENABLE_TESTING)
   catkin_add_gtest(test_parking_s_curve

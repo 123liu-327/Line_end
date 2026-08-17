@@ -1434,43 +1434,52 @@ int followLineTestOnce() {
         return 0;
     }
 
-    float error = 0.0f;
-    float v = 0.0f;
     if (rpts_num == 0) {
-        // 连续丢线时逐步停车；偶发一帧丢线时仍低速前进，减少图像抖动影响。
         zeroCount++;
         if (zeroCount >= 2) {
             zero_flag = true;
         }
-        error = 0.0f;
-        v = zero_flag ? 0.0f : 0.15f;
     } else {
         zeroCount = 0;
         zero_flag = false;
-        // 取前方 aim_distance 处的路径点作为瞄准点。
-        // dx/dy 转成 atan2 角度误差，再用误差大小降低线速度。
-        const int aim_idx = clip(round(aim_distance / sample_dist), 0, rpts_num - 1);
-        const float cx = RESULT_COL / 2.0f;
-        const float cy = RESULT_ROW + 10.0f;
-        const float dx = rpts[aim_idx][0] - cx;
-        const float dy = cy - rpts[aim_idx][1] + aim_y_bias_m * pixel_per_meter;
-        error = -atan2f(dx, dy);
-        v = static_cast<float>(base_speed - std::abs(error) * base_speed);
-        v = std::max(0.05f, v);
     }
 
-    geometry_msgs::Twist msg;
-    msg.linear.x = v;
-    msg.angular.z = error;//这里的error具体作用，如果为0，则小车会原地转圈，如果为正，则小车会向左转，如果为负，则小车会向右转
+    // 普通巡线统一交给运动控制层处理，与 4cc674d9 的完整接入保持一致。
+    // 控制层负责路径/误差滤波、PID 偏转、角速度限幅、转弯降速、
+    // 指令变化率限制以及短时丢线滑行，避免绕过这些保护直接发布 error。
+    MotionControlInput control_input;
+    control_input.path = rpts;
+    control_input.path_num = rpts_num;
+    control_input.path_key = static_cast<int>(path_select);
+    control_input.path_name = pathToString(path_select);
+    control_input.degraded = is_degraded_mode;
+    control_input.base_speed = base_speed;
+    control_input.aim_distance = aim_distance;
+    control_input.aim_y_bias_m = aim_y_bias_m;
+    control_input.sample_dist = sample_dist;
+    control_input.pixel_per_meter = pixel_per_meter;
+    control_input.image_width = RESULT_COL;
+    control_input.image_height = RESULT_ROW;
+    control_input.allow_lost_coast = true;
 
-    pub.publish(msg);
+    const MotionControlOutput control_output = motion_controller.compute(control_input);
+    pub.publish(control_output.cmd);
     publishDebugImage();
 // 主循环调试信息：输出当前选用的路径、路径点数量、是否退化、误差和速度，以及角点检测状态和丢线计数。
 ROS_WARN_THROTTLE(1.0, "[FOLLOW] Running | path=%s | rpts=%d | degraded=%d | error=%.3f rad | v=%.3f m/s | L0=%d | L1=%d | Y0=%d | Y1=%d | lost_line_count=%d | zero_flag=%d",
                   pathToString(path_select).c_str(), rpts_num, is_degraded_mode,
-                  error, v,
+                  control_output.filtered_error, control_output.cmd.linear.x,
                   Lpt0_found, Lpt1_found, Ypt0_found, Ypt1_found,
                   zeroCount, zero_flag);
+ROS_WARN_THROTTLE(1.0, "[CONTROL] path=%s | rpts=%d | degraded=%d | raw_error=%.3f | filt_error=%.3f | target_v=%.3f | cmd_v=%.3f | cmd_wz=%.3f | lost=%d | coast=%d",
+                  pathToString(path_select).c_str(), rpts_num, is_degraded_mode,
+                  control_output.raw_error,
+                  control_output.filtered_error,
+                  control_output.target_v,
+                  control_output.cmd.linear.x,
+                  control_output.cmd.angular.z,
+                  control_output.lost,
+                  control_output.coasting);
 
     return 0;
 }

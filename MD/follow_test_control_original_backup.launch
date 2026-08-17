@@ -194,30 +194,30 @@
 
   <!-- ======================== 巡线运动控制器参数 ======================== -->
   <!--
-    完整备份：V2 激进响应控制参数。保持 aim_distance=0.10m，其余启动参数保留备份创建时的最新版本。
+    完整备份：修改前原始普通巡线控制参数。其余启动参数保留备份创建时的最新版本。
   -->
   <arg name="control_path_smooth_window" default="2" />
-  <arg name="control_path_ema_alpha" default="0.65" />
-  <arg name="control_error_filter_alpha" default="0.82" />
-  <arg name="control_yaw_deadband" default="0.010" />
-  <arg name="control_kp_yaw" default="1.55" />
+  <arg name="control_path_ema_alpha" default="0.35" />
+  <arg name="control_error_filter_alpha" default="0.65" />
+  <arg name="control_yaw_deadband" default="0.015" />
+  <arg name="control_kp_yaw" default="1.00" />
   <arg name="control_ki_yaw" default="0.00" />
-  <arg name="control_kd_yaw" default="0.10" />
+  <arg name="control_kd_yaw" default="0.08" />
   <arg name="control_integral_limit" default="0.30" />
   <arg name="control_integral_error_threshold" default="0.25" />
-  <arg name="control_adaptive_error_threshold" default="0.20" />
-  <arg name="control_adaptive_kp_scale" default="1.45" />
-  <arg name="control_adaptive_kd_scale" default="1.50" />
-  <arg name="control_max_wz" default="0.95" />
-  <arg name="control_soft_wz_limit" default="0.88" />
-  <arg name="control_max_wz_rate" default="3.40" />
-  <arg name="control_turn_slowdown" default="0.88" />
-  <arg name="control_slow_error" default="0.25" />
+  <arg name="control_adaptive_error_threshold" default="0.35" />
+  <arg name="control_adaptive_kp_scale" default="1.25" />
+  <arg name="control_adaptive_kd_scale" default="1.40" />
+  <arg name="control_max_wz" default="0.65" />
+  <arg name="control_soft_wz_limit" default="0.55" />
+  <arg name="control_max_wz_rate" default="1.80" />
+  <arg name="control_turn_slowdown" default="0.65" />
+  <arg name="control_slow_error" default="0.45" />
   <arg name="control_min_speed" default="0.05" />
   <arg name="control_degraded_speed_scale" default="0.75" />
   <arg name="control_max_accel" default="0.35" />
-  <arg name="control_max_decel" default="1.60" />
-  <arg name="control_cmd_filter_alpha" default="0.72" />
+  <arg name="control_max_decel" default="0.80" />
+  <arg name="control_cmd_filter_alpha" default="0.45" />
   <arg name="lost_line_coast_sec" default="0.15" />
   <arg name="lost_line_coast_speed_scale" default="0.60" />
 
